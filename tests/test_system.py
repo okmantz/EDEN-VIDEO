@@ -93,3 +93,24 @@ def test_missing_ffmpeg_prints_exact_command_and_exits(tmp_path, monkeypatch, ca
 def test_parser_accepts_lan_and_port():
     a = cli.build_parser().parse_args(["--lan", "--port", "9001", "--no-browser"])
     assert a.lan and a.port == 9001 and a.no_browser and a.command == "run"
+
+
+def test_bundled_ffmpeg_is_preferred_when_frozen(tmp_path, monkeypatch):
+    import sys
+    exe = tmp_path / "bin" / ("ffmpeg.exe" if system.platform.system() == "Windows" else "ffmpeg")
+    exe.parent.mkdir()
+    exe.write_text("x")
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
+    assert system.is_frozen()
+    assert system.locate_binary("ffmpeg") == str(exe)
+
+
+def test_data_dir_sits_next_to_the_app_when_frozen(tmp_path, monkeypatch):
+    import sys
+
+    from eden.config import Config
+    monkeypatch.delenv("EDEN_DATA_DIR", raising=False)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "eden-video"))
+    assert Config.from_env().data_dir == (tmp_path / "data").resolve()

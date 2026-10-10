@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from .system import locate_binary
+from .system import is_frozen, locate_binary
 
 
 def _env_int(name: str, default: int) -> int:
@@ -13,6 +14,13 @@ def _env_int(name: str, default: int) -> int:
         return int(os.environ.get(name, default))
     except (TypeError, ValueError):
         return default
+
+
+def _default_data_dir() -> Path:
+    # The downloadable app keeps your videos in a "data" folder right next to it.
+    if is_frozen():
+        return Path(sys.executable).resolve().parent / "data"
+    return Path("./data")
 
 
 @dataclass(frozen=True)
@@ -38,7 +46,7 @@ class Config:
     def from_env(cls) -> "Config":
         e = os.environ.get
         return cls(
-            data_dir=Path(e("EDEN_DATA_DIR", "./data")).resolve(),
+            data_dir=Path(e("EDEN_DATA_DIR") or _default_data_dir()).resolve(),
             host=e("EDEN_HOST", "127.0.0.1"),
             port=_env_int("EDEN_PORT", 8000),
             max_upload_mb=_env_int("EDEN_MAX_UPLOAD_MB", 4096),

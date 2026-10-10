@@ -29,9 +29,33 @@ Every editing step has a deterministic implementation:
 
 ## Install and run
 
-Eden is a web app that runs on your own computer. You open it in your browser. There is one command to run, and it installs everything it can.
+Eden is a web app that runs on your own computer and opens in your browser. There are two ways to get it. **The download is the easy one.**
 
-### 1. Get Eden
+### Option A: Download the app (nothing to install)
+
+This is a ready-to-run build for **Windows, Mac and Linux**. Python, FFmpeg and the speech engine are all inside it.
+
+**Get it from GitHub (one time):**
+
+1. In your repo, open the **Actions** tab, choose **Build downloadable app** on the left, click **Run workflow**, and wait about 15 to 25 minutes.
+2. Open the finished run and download **EDEN-VIDEO-windows**, **EDEN-VIDEO-macos** or **EDEN-VIDEO-linux** from the *Artifacts* section at the bottom.
+3. To give anyone a normal download link instead, publish a release: `git tag v1.0.0 && git push --tags`. The three downloads are attached to the release page automatically.
+
+**Run it:**
+
+| Your computer | Do this |
+|---|---|
+| **Windows** | Unzip, then double-click **`eden-video.exe`**. If Windows says it "protected your PC", click **More info → Run anyway** (once). |
+| **Mac** | Unpack, then right-click **`Start EDEN VIDEO.command`** → **Open** → **Open** (once). Apple-silicon Macs. |
+| **Linux** | Unpack, then run `./eden-video` in that folder. |
+
+Eden opens at <http://localhost:8000>. Keep the black window open while you use it; close it to stop. Your videos live in the `data` folder next to the app. The download is large (roughly 250 MB packed) because it contains everything.
+
+### Option B: Run from the source code
+
+Use this if you want to change the code. It needs nothing installed first: the launcher sets everything up.
+
+#### 1. Get the code
 
 Click **Code → Download ZIP** on GitHub and unzip it, or:
 
@@ -40,7 +64,7 @@ git clone https://github.com/okmantz/EDEN-VIDEO.git
 cd EDEN-VIDEO
 ```
 
-### 2. Start it
+#### 2. Start it
 
 | Your computer | Do this |
 |---|---|
@@ -200,6 +224,10 @@ Run `python -m eden download-model` once on a connected machine and copy the Hug
 
 Captions default to **Inter**. Install it, or set a different installed font under **Settings → Branding**. You can also drop `.ttf` or `.otf` files into `data/assets/fonts/` and Eden will use them.
 
+## Third-party software in the download
+
+The downloadable app bundles an unmodified FFmpeg build (GPL, <https://ffmpeg.org>; Windows and Linux builds from [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds)) as a separate program that Eden runs, plus Python and the packages in `requirements.txt` under their own licences.
+
 ## Security
 
 Eden is a single-user app with no accounts. By default it listens on `127.0.0.1`, so only your computer can reach it. If you bind it to a network interface or put it on a server:
@@ -226,6 +254,8 @@ eden/
   jobs.py        Background render queue
   db.py          SQLite storage
   static/        The web interface (plain HTML, CSS and ES modules, no build step)
+packaging/       Recipe for the downloadable app (PyInstaller), FFmpeg fetcher, smoke test
+run_eden.py      Entry point of the downloadable app
 scripts/         bootstrap.py (the one-step installer behind start.sh / start.bat)
 deploy/          systemd service for running Eden in the background
 start.sh  start.bat  start.command   double-click launchers

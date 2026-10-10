@@ -96,6 +96,20 @@ def ffmpeg_install_plan(os_name: str | None = None, *, is_root: bool | None = No
 
 # ------------------------------------------------------------------- binaries
 
+def is_frozen() -> bool:
+    """True inside the downloadable app built with PyInstaller."""
+    return bool(getattr(sys, "frozen", False))
+
+
+def bundle_dirs() -> list[Path]:
+    """Folders where the downloadable app keeps its own copy of FFmpeg."""
+    if not is_frozen():
+        return []
+    exe_dir = Path(sys.executable).resolve().parent
+    base = Path(getattr(sys, "_MEIPASS", exe_dir))
+    return [base / "bin", exe_dir / "bin", exe_dir]
+
+
 def _candidate_dirs() -> list[Path]:
     home = Path.home()
     dirs = [Path("/opt/homebrew/bin"), Path("/usr/local/bin"), Path("/usr/bin"),
@@ -125,10 +139,13 @@ def locate_binary(name: str, override: str = "") -> str | None:
             return found
         if Path(override).is_file():
             return override
+    exe = name + (".exe" if platform.system() == "Windows" else "")
+    for d in bundle_dirs():          # the copy shipped inside the downloadable app wins
+        if (d / exe).is_file():
+            return str(d / exe)
     found = shutil.which(name)
     if found:
         return found
-    exe = name + (".exe" if platform.system() == "Windows" else "")
     for d in _candidate_dirs():
         p = d / exe
         if p.is_file():
