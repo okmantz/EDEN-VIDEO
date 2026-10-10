@@ -5,6 +5,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from .system import locate_binary
+
 
 def _env_int(name: str, default: int) -> int:
     try:
@@ -41,8 +43,8 @@ class Config:
             port=_env_int("EDEN_PORT", 8000),
             max_upload_mb=_env_int("EDEN_MAX_UPLOAD_MB", 4096),
             workers=max(1, _env_int("EDEN_WORKERS", 1)),
-            ffmpeg=e("EDEN_FFMPEG", "ffmpeg"),
-            ffprobe=e("EDEN_FFPROBE", "ffprobe"),
+            ffmpeg=locate_binary("ffmpeg", e("EDEN_FFMPEG", "")) or "ffmpeg",
+            ffprobe=locate_binary("ffprobe", e("EDEN_FFPROBE", "")) or "ffprobe",
             x264_preset=e("EDEN_X264_PRESET", "veryfast"),
             password=e("EDEN_PASSWORD", ""),
             ollama_url=e("OLLAMA_URL", "http://127.0.0.1:11434"),

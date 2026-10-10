@@ -1,0 +1,23 @@
+# Run Eden in the background on a Linux machine and start it at boot.
+#
+#   1. Edit User= and the two paths below (WorkingDirectory, ExecStart).
+#   2. sudo cp deploy/eden.service /etc/systemd/system/eden.service
+#   3. sudo systemctl enable --now eden
+#   4. Logs: journalctl -u eden -f
+#
+# Run `bash start.sh --setup` once first so the .venv exists.
+[Unit]
+Description=EDEN VIDEO
+After=network.target
+
+[Service]
+User=CHANGE_ME
+WorkingDirectory=/home/CHANGE_ME/EDEN-VIDEO
+# --lan listens on your network and creates a password if EDEN_PASSWORD is not set.
+# For a stable password, add:  Environment=EDEN_PASSWORD=choose-something-long
+ExecStart=/home/CHANGE_ME/EDEN-VIDEO/.venv/bin/python -m eden --lan --no-browser
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

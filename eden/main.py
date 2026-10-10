@@ -6,7 +6,6 @@ import json
 import re
 import secrets
 import shutil
-import subprocess
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Optional
@@ -25,6 +24,7 @@ from .media import MediaError, detect_silences, make_thumbnail, probe, run_ffmpe
 from .models import BrollPatch, RenderRequest, SettingsUpdate, VideoPatch
 from .presets import PACING, PLATFORMS, STYLES, public_catalog
 from .services import Services
+from .system import ffmpeg_info, ffmpeg_install_plan
 from .transcript import parse_subtitles, save_words, whisper_available
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -154,15 +154,12 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
 
     @app.get("/api/health")
     def health() -> dict:
-        ff = None
-        try:
-            r = subprocess.run([cfg.ffmpeg, "-version"], capture_output=True, text=True, timeout=10)
-            if r.returncode == 0:
-                ff = r.stdout.splitlines()[0]
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            pass
+        info = ffmpeg_info(cfg.ffmpeg)
+        plan = ffmpeg_install_plan()
         s = svc.settings()
-        return {"ffmpeg": ff, "whisper": whisper_available(), "whisper_model": s["whisper_model"],
+        return {"ffmpeg": info.version if info.usable else None, "captions_ok": info.libass,
+                "ffmpeg_fix": "" if info.usable else plan.command,
+                "whisper": whisper_available(), "whisper_model": s["whisper_model"],
                 "ollama_enabled": bool(s["ollama_enabled"]), "pexels": bool(s["pexels_key"]), "version": __version__}
 
     @app.post("/api/ollama/test")

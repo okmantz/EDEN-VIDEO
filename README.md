@@ -27,38 +27,89 @@ Every editing step has a deterministic implementation:
 - **Captions and filler-word removal need a transcript.** Eden gets one from [Whisper](https://github.com/SYSTRAN/faster-whisper) running locally on your machine (a speech-to-text model, not a language model, and nothing is sent online). If you would rather not install it, attach your own `.srt` or `.vtt` file to any video and Eden uses that instead.
 - **Ollama is optional.** With it off, unreachable or erroring, Eden falls back to built-in keyword extraction and tells you it did.
 
-## Quick start
+## Install and run
 
-You need **Python 3.10+** and **FFmpeg**.
+Eden is a web app that runs on your own computer. You open it in your browser. There is one command to run, and it installs everything it can.
+
+### 1. Get Eden
+
+Click **Code → Download ZIP** on GitHub and unzip it, or:
 
 ```bash
-# 1. Install FFmpeg
-#    macOS:    brew install ffmpeg
-#    Ubuntu:   sudo apt install ffmpeg
-#    Windows:  winget install Gyan.FFmpeg
-
-# 2. Get Eden
-git clone <your-repo-url> eden-video
-cd eden-video
-
-# 3. Install (a virtual environment is recommended)
-python3 -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -r requirements.txt    # add the speech engine; use requirements-core.txt to skip it
-
-# 4. Run
-python -m eden
+git clone https://github.com/okmantz/EDEN-VIDEO.git
+cd EDEN-VIDEO
 ```
 
-Eden opens at <http://localhost:8000>. The first time you transcribe, Whisper downloads its model (about 150 MB for `base`); after that it works offline.
+### 2. Start it
+
+| Your computer | Do this |
+|---|---|
+| **Windows** | Double-click **`start.bat`** |
+| **Mac** | Double-click **`start.command`** (first time: right-click → Open) |
+| **Linux** | Run `bash start.sh` in the folder |
+
+The first run takes a minute or two. Eden:
+
+1. creates its own private Python environment (`.venv`), so it never touches your system Python;
+2. installs its packages, including the local speech engine for captions;
+3. checks for **FFmpeg** and, if it is missing, shows the exact install command for *your* system and offers to run it for you;
+4. starts and opens <http://localhost:8000> in your browser.
+
+Every run after that starts in a couple of seconds. To stop Eden, press **Ctrl+C** in its window (or close the window).
+
+You only need **Python 3.10 or newer** installed first. If it is missing, the launcher says so and tells you how to get it. On Windows, tick **"Add python.exe to PATH"** in the Python installer.
+
+### Options
+
+Add these after the command, for example `bash start.sh --lan` or `start.bat --lite`:
+
+| Option | What it does |
+|---|---|
+| `--lan` | Lets your phone and other computers on your Wi-Fi use Eden. A password is created for you and printed. |
+| `--lite` | Skips the speech engine (smaller install). Captions then need an `.srt` file. |
+| `--port 9000` | Use another port. If 8000 is busy, Eden picks the next free one by itself. |
+| `--no-browser` | Do not open the browser. |
+| `doctor` | Check that everything Eden needs is installed, and say how to fix what is not. |
+| `download-model` | Download the speech model now, so the first edit starts straight away. |
 
 ### Docker
+
+If you prefer containers (FFmpeg and fonts are included, nothing else to install):
 
 ```bash
 docker compose up --build
 ```
 
 Open <http://localhost:8000>. Data lives in the `eden-data` volume, including the downloaded Whisper model. The compose file binds to `127.0.0.1` only; see [Security](#security) before exposing it.
+
+### Keep it running in the background (Linux)
+
+Copy [`deploy/eden.service`](deploy/eden.service), edit the three `CHANGE_ME` values, and follow the steps at the top of the file. Eden then starts at boot and restarts if it stops.
+
+### Updating
+
+```bash
+git pull
+bash start.sh        # or start.bat / start.command: new packages install automatically
+```
+
+Your videos and settings live in the `data` folder and are not touched.
+
+### Troubleshooting
+
+Run **`python -m eden doctor`** (or `.venv/bin/python -m eden doctor`) first. It lists what is missing and the fix for each item.
+
+| Problem | Fix |
+|---|---|
+| **"FFmpeg was not found"** | Run the command Eden prints; it is already right for your system. By hand: Ubuntu/Debian `sudo apt-get install -y ffmpeg`, Mac `brew install ffmpeg`, Windows `winget install --id Gyan.FFmpeg -e`. On Windows, close and reopen the window afterwards. |
+| `No module named EDEN` | The name is lowercase: `python -m eden`. Easier still: use `start.sh` / `start.bat`. |
+| `Permission denied: ./start.sh` | Run it as `bash start.sh`. Files uploaded through the GitHub website lose their "executable" flag. |
+| Linux: "ensurepip is not available" / venv error | `sudo apt install -y python3-venv python3-pip`, then run the launcher again. |
+| `winget` is "not found" on Linux, or `apt` on Windows | Those commands belong to different systems. Eden prints the right one for yours. |
+| Port 8000 is busy | Nothing to do: Eden uses the next free port and prints the address. Or choose one with `--port`. |
+| Captions are missing | Run `doctor`. Either the speech engine is not installed (run the launcher without `--lite`), or this FFmpeg build has no caption support (install a full build). You can also attach an `.srt` file. |
+| First edit sits on "Getting the speech model ready" | Eden is downloading the speech model (about 150 MB, one time). Needs internet once; then it works offline. |
+| Pip cannot download packages | Check your connection, proxy or VPN, then run the launcher again; it resumes where it stopped. |
 
 ## Using Eden
 
@@ -120,7 +171,8 @@ Environment variables (see [`.env.example`](.env.example)). Most things are also
 | Variable | Default | Purpose |
 |---|---|---|
 | `EDEN_DATA_DIR` | `./data` | Uploads, renders, database, caches |
-| `EDEN_HOST` / `EDEN_PORT` | `127.0.0.1` / `8000` | Where Eden listens |
+| `EDEN_HOST` / `EDEN_PORT` | `127.0.0.1` / `8000` | Where Eden listens (or use `--lan`, `--port`) |
+| `EDEN_FFMPEG` / `EDEN_FFPROBE` | *(auto-detected)* | Full path to FFmpeg if it is somewhere unusual |
 | `EDEN_PASSWORD` | *(none)* | Enables HTTP basic auth (any username) |
 | `EDEN_MAX_UPLOAD_MB` | `4096` | Largest accepted upload |
 | `EDEN_WORKERS` | `1` | Concurrent renders |
@@ -136,7 +188,7 @@ Install [Ollama](https://ollama.com), run `ollama pull llama3.2`, then turn on *
 
 ### Optional: working offline from the first run
 
-Download the Whisper model once on a connected machine (`python -c "from faster_whisper import WhisperModel; WhisperModel('base')"`) and copy the Hugging Face cache (`~/.cache/huggingface`) to the offline machine, or set `HF_HOME`.
+Run `python -m eden download-model` once on a connected machine and copy the Hugging Face cache (`~/.cache/huggingface`) to the offline machine, or set `HF_HOME`.
 
 ### Fonts
 
@@ -153,6 +205,8 @@ Eden is a single-user app with no accounts. By default it listens on `127.0.0.1`
 
 ```
 eden/
+  __main__.py    Command line: run, doctor, download-model
+  system.py      FFmpeg discovery, per-OS install help, health checks
   main.py        FastAPI app and routes
   pipeline.py    The end-to-end edit
   editor.py      FFmpeg filter graphs (cut, reframe, zoom, overlay, captions, encode)
@@ -166,6 +220,9 @@ eden/
   jobs.py        Background render queue
   db.py          SQLite storage
   static/        The web interface (plain HTML, CSS and ES modules, no build step)
+scripts/         bootstrap.py (the one-step installer behind start.sh / start.bat)
+deploy/          systemd service for running Eden in the background
+start.sh  start.bat  start.command   double-click launchers
 tests/           pytest suite (includes real FFmpeg renders)
 ```
 
@@ -184,8 +241,9 @@ Interactive docs are served at `/api/docs`. The main endpoints:
 ## Development
 
 ```bash
-pip install -r requirements.txt -r requirements-dev.txt
-make test      # pytest
+bash start.sh --setup --lite            # creates .venv
+.venv/bin/pip install -r requirements-dev.txt
+make test PY=.venv/bin/python      # pytest
 make lint      # ruff
 ```
 

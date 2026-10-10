@@ -58,6 +58,21 @@ async function render() {
   refreshBadge();
 }
 
+function showSetupBanner() {
+  const h = ctx.health;
+  let msg = '';
+  if (!h.ffmpeg) {
+    msg = `<b>One thing left to set up: FFmpeg.</b> Eden needs it to edit videos.${h.ffmpeg_fix
+      ? ` Run this in a terminal, then restart Eden: <code>${esc(h.ffmpeg_fix)}</code>` : ' Install it, then restart Eden.'}`;
+  } else if (h.captions_ok === false) {
+    msg = '<b>This FFmpeg cannot draw captions.</b> Install a full FFmpeg build (libass) to get burned-in captions.';
+  }
+  const el = $('#setupBanner');
+  if (!el) return;
+  el.hidden = !msg;
+  el.innerHTML = msg;
+}
+
 async function boot() {
   try {
     [ctx.meta, ctx.health, ctx.settings] = await Promise.all([api('/meta'), api('/health'), api('/settings')]);
@@ -67,7 +82,7 @@ async function boot() {
   }
   ctx.maxUploadMb = ctx.meta.max_upload_mb || 0;
   $('#railFoot').innerHTML = `<b>EDEN VIDEO</b><br>A Professional Video Editing Software<br>v${esc(ctx.meta.version)}`;
-  if (!ctx.health.ffmpeg) toast('FFmpeg was not found. Install it, then restart Eden.', 'err');
+  showSetupBanner();
   window.addEventListener('hashchange', render);
   setInterval(refreshBadge, 5000);
   render();

@@ -16,7 +16,8 @@ from .db import now
 from .models import RenderOptions
 from .presets import FILLER_WORDS, PACING, get_platform, get_style
 from .services import Services
-from .transcript import Word, load_words, save_words, transcribe_whisper, whisper_available
+from .system import ffmpeg_info
+from .transcript import Word, load_words, model_cached, save_words, transcribe_whisper, whisper_available
 
 
 class Reporter:
@@ -68,6 +69,9 @@ def get_transcript(svc: Services, project: dict, opts: RenderOptions, settings: 
                             "Install it with: pip install faster-whisper (then restart Eden), or upload an .srt file for this video.")
     wav = work / "speech.wav"
     media.extract_audio_wav(cfg, Path(project["path"]), wav, handle)
+    first_run = not model_cached(model_size, cfg.whisper_device)
+    if first_run:
+        rep.set("Transcribing speech", 12, "Getting the speech model ready (first time only, this can take a few minutes)")
     try:
         words, detected = transcribe_whisper(wav, model_size, cfg.whisper_device, lang,
                                              project["duration"], rep.span("Transcribing speech", 12, 46), handle)
@@ -75,6 +79,8 @@ def get_transcript(svc: Services, project: dict, opts: RenderOptions, settings: 
         raise
     except Exception as e:  # model download failures, unsupported device, etc.
         return [], "none", f"Speech recognition failed ({type(e).__name__}: {str(e)[:160]}). Continuing without captions."
+    if first_run:
+        svc.db.update("videos", rep.video_id, {"message": ""})
     path = cfg.cache_dir / f"{project['id']}.transcript.json"
     save_words(path, words, "whisper", detected, model_size)
     svc.db.update("projects", project["id"], {"transcript_path": str(path), "transcript_source": "whisper"})
@@ -209,7 +215,12 @@ def run_pipeline(svc: Services, video_id: str, handle: media.ProcHandle) -> None
         # ---- 7. captions ------------------------------------------------- #
         ass_name: Optional[str] = None
         srt_path: Optional[Path] = None
-        if opts.captions and caption_words:
+        if opts.captions and caption_words and not ffmpeg_info(cfg.ffmpeg).libass:
+            notes.append("Captions were skipped because this FFmpeg build cannot draw them (it lacks libass). "
+                         "Install a full FFmpeg build and try again; an .srt file was still saved.")
+            srt_path = cfg.renders_dir / f"{video_id}.srt"
+            srt_path.write_text(cap_mod.build_srt(caption_words), encoding="utf-8")
+        elif opts.captions and caption_words:
             rep.set("Adding captions & b-roll", 75)
             chunk_style = style["caption"]
             chunks = cap_mod.group_words(caption_words, chunk_style["max_words"],

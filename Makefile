@@ -1,4 +1,4 @@
-.PHONY: install install-core dev run test lint docker sample
+.PHONY: doctor install install-core dev run test lint docker sample
 
 PY ?= python3
 
@@ -11,8 +11,11 @@ install-core:       ## install without the speech engine (captions then need an 
 dev:                ## install for development
 	$(PY) -m pip install -r requirements.txt -r requirements-dev.txt
 
-run:                ## start Eden and open it in your browser
-	$(PY) -m eden
+run:                ## install what is missing, start Eden and open it in your browser
+	bash start.sh
+
+doctor:             ## check that everything Eden needs is installed
+	$(PY) -m eden doctor
 
 test:
 	$(PY) -m pytest

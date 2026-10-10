@@ -84,6 +84,11 @@ _model_lock = threading.Lock()
 DISFLUENCY_PROMPT = "Umm, uh, so, like, you know, I mean, hmm. Well, uh... let me think. Right, okay."
 
 
+def model_cached(model_size: str, device: str) -> bool:
+    """True once the model is loaded in this process (a download may happen otherwise)."""
+    return (model_size, device) in _models
+
+
 def transcribe_whisper(wav: Path, model_size: str, device: str, language: Optional[str],
                        duration: float, on_progress: Optional[Callable[[float], None]] = None,
                        handle: Optional[ProcHandle] = None) -> tuple[list[Word], str]:
