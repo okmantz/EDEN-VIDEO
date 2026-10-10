@@ -57,7 +57,9 @@ The first run takes a minute or two. Eden:
 
 Every run after that starts in a couple of seconds. To stop Eden, press **Ctrl+C** in its window (or close the window).
 
-You only need **Python 3.10 or newer** installed first. If it is missing, the launcher says so and tells you how to get it. On Windows, tick **"Add python.exe to PATH"** in the Python installer.
+You do not need to install anything first. If Python or FFmpeg is missing, the launcher installs it (Windows: through `winget`, or python.org as a fallback; Mac: through Homebrew). On Linux it prints the one command to run.
+
+If the automatic install cannot finish, install Python yourself from <https://www.python.org/downloads/> and tick **"Add python.exe to PATH"**, then double-click `start.bat` again.
 
 ### Options
 
@@ -81,6 +83,10 @@ docker compose up --build
 ```
 
 Open <http://localhost:8000>. Data lives in the `eden-data` volume, including the downloaded Whisper model. The compose file binds to `127.0.0.1` only; see [Security](#security) before exposing it.
+
+### Run it online instead (nothing installed on your computer)
+
+Eden can also live on a server and be opened from any browser, like any hosted web app. Use a small always-on machine that has Docker (a cloud VM, for example), run `docker compose up -d --build`, set `EDEN_PASSWORD`, and put HTTPS in front of it (Caddy or nginx). Serverless hosts such as Cloud Run are a poor fit: they cap upload size, and video renders can take longer than their request limits. This hosted setup is documented but not tested here. See [Security](#security).
 
 ### Keep it running in the background (Linux)
 

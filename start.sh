@@ -11,6 +11,12 @@ for py in python3 python; do
   fi
 done
 
+if [ "$(uname -s)" = "Darwin" ] && command -v brew >/dev/null 2>&1 && [ -t 0 ]; then
+  echo
+  read -r -p "  Eden needs Python 3.10 or newer. Install it now with Homebrew? [Y/n] " ans
+  case "$ans" in ""|y|Y|yes) brew install python && exec bash "$0" "$@" ;; esac
+fi
+
 echo
 echo "  Eden needs Python 3.10 or newer, and it was not found."
 case "$(uname -s)" in
