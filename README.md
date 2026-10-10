@@ -1,0 +1,205 @@
+# EDEN VIDEO
+
+**A Professional Video Editing Software**
+
+Upload a short clip or a long recording and get a finished edit for Instagram, TikTok, Facebook and YouTube. Eden cuts the silence and the "ums", adds styled captions, drops in B-roll cutaways, reframes to each platform's aspect ratio and exports one polished file per platform.
+
+Eden runs on your own computer. Your footage is never uploaded anywhere, and it works fully offline once set up.
+
+## What it does
+
+| | |
+|---|---|
+| **Silence removal** | Detects pauses with FFmpeg and shortens them to a natural beat. Three pacing levels: relaxed, balanced, tight. |
+| **Filler-word removal** | Finds "um", "uh", "er" and similar sounds in the transcript and cuts them, along with the pause that came before them. Optional: "you know" and "I mean". |
+| **Captions** | Burned-in, styled captions with word-by-word highlighting, safe-zone placement for each platform, plus a clean `.srt` file for every video. |
+| **B-roll** | Cuts to clips from your library when a tagged word is spoken, and fills long talking stretches. Optional stock footage from Pexels. |
+| **Reframing** | Fill the frame (with an adjustable crop position) or fit the whole frame over a blurred backdrop. |
+| **Polish** | Punch-in zooms at cuts, a colour grade per style, noise reduction, compression and loudness normalisation (-14 LUFS by default). |
+| **Multi-platform** | Pick any mix of Instagram Reels / Feed, TikTok, Facebook Reels / Feed, YouTube Shorts / YouTube. One render per platform. |
+| **Optional AI** | Ollama can write a title, description and hashtags and choose emphasis words. **Nothing depends on it.** |
+
+### It is fully functional without AI
+
+Every editing step has a deterministic implementation:
+
+- Silence trimming, zooms, reframing, grading, audio polish and B-roll placement use FFmpeg and plain algorithms.
+- **Captions and filler-word removal need a transcript.** Eden gets one from [Whisper](https://github.com/SYSTRAN/faster-whisper) running locally on your machine (a speech-to-text model, not a language model, and nothing is sent online). If you would rather not install it, attach your own `.srt` or `.vtt` file to any video and Eden uses that instead.
+- **Ollama is optional.** With it off, unreachable or erroring, Eden falls back to built-in keyword extraction and tells you it did.
+
+## Quick start
+
+You need **Python 3.10+** and **FFmpeg**.
+
+```bash
+# 1. Install FFmpeg
+#    macOS:    brew install ffmpeg
+#    Ubuntu:   sudo apt install ffmpeg
+#    Windows:  winget install Gyan.FFmpeg
+
+# 2. Get Eden
+git clone <your-repo-url> eden-video
+cd eden-video
+
+# 3. Install (a virtual environment is recommended)
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r requirements.txt    # add the speech engine; use requirements-core.txt to skip it
+
+# 4. Run
+python -m eden
+```
+
+Eden opens at <http://localhost:8000>. The first time you transcribe, Whisper downloads its model (about 150 MB for `base`); after that it works offline.
+
+### Docker
+
+```bash
+docker compose up --build
+```
+
+Open <http://localhost:8000>. Data lives in the `eden-data` volume, including the downloaded Whisper model. The compose file binds to `127.0.0.1` only; see [Security](#security) before exposing it.
+
+## Using Eden
+
+1. **Create** – drag a video onto the drop zone (or choose a file). Eden reads it and measures how much dead air it can trim.
+2. **Choose a look** – pick a style, tick the platforms you post to, and switch features on or off.
+3. **Create video** – watch progress per platform. Finished videos can be played, downloaded, renamed and re-edited from **Saved videos**.
+
+Other pages: **Home**, **B-roll library** (upload and tag cutaway clips), **Settings** (profile, branding and logo, defaults, speech model, Ollama, Pexels, system status).
+
+### Styles
+
+| Style | Pacing | Captions |
+|---|---|---|
+| Viral Pop | Tight, punch-in zooms | Bold, uppercase, word-by-word highlight |
+| Clean Pro | Balanced | Understated, bottom |
+| Podcast Clip | Balanced, zooms | Boxed |
+| Bold Impact | Tight, zooms, more B-roll | Huge, centred, word-by-word |
+| Cinematic | Relaxed | Elegant, filmic colour grade |
+
+Styles are plain data in [`eden/presets.py`](eden/presets.py). Adding or tweaking one takes a few lines.
+
+### Platforms
+
+| Target | Output | Recommended length* |
+|---|---|---|
+| Instagram Reels | 1080×1920 (9:16) | 90 s |
+| Instagram Feed | 1080×1350 (4:5) | 60 s |
+| TikTok | 1080×1920 (9:16) | 3 min |
+| Facebook Reels | 1080×1920 (9:16) | 90 s |
+| Facebook Feed | 1080×1080 (1:1) | 3 min |
+| YouTube Shorts | 1080×1920 (9:16) | 3 min |
+| YouTube | 1920×1080 (16:9) | none |
+
+\*Soft guidance only. Eden warns but never refuses. Platforms change their limits often, so check current specs and edit `PLATFORMS` in `eden/presets.py` to match.
+
+### How B-roll is chosen
+
+1. If a spoken word matches a tag on one of your clips (after simple stemming), that clip is placed on the word.
+2. If the talking head runs longer than the density setting allows (5.5 s, 9 s or 16 s), the next clip in rotation fills the gap.
+3. Cutaways never cover the opening hook or the final beat, never overlap, and snap to word boundaries. Audio always continues underneath.
+
+With no library clips and no Pexels key, Eden skips cutaways and relies on punch-in zooms to keep the edit lively.
+
+### How the edit is built
+
+```
+upload ─ probe ─ detect silence ─ transcribe (Whisper or .srt) ─ find fillers
+      └─ keep-segments = speech − fillers, snapped to the frame grid
+Stage 1  FFmpeg: trim + concat segments, reframe, zoom, grade, clean audio, normalise loudness
+Stage 2  FFmpeg: overlay B-roll, burn captions (ASS), add logo, encode to platform spec
+```
+
+Transcripts are cached per upload, so rendering the same video for several platforms transcribes once.
+
+## Configuration
+
+Environment variables (see [`.env.example`](.env.example)). Most things are also in the Settings page.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `EDEN_DATA_DIR` | `./data` | Uploads, renders, database, caches |
+| `EDEN_HOST` / `EDEN_PORT` | `127.0.0.1` / `8000` | Where Eden listens |
+| `EDEN_PASSWORD` | *(none)* | Enables HTTP basic auth (any username) |
+| `EDEN_MAX_UPLOAD_MB` | `4096` | Largest accepted upload |
+| `EDEN_WORKERS` | `1` | Concurrent renders |
+| `EDEN_X264_PRESET` | `veryfast` | Final-encode speed vs size |
+| `EDEN_WHISPER_MODEL` | `base` | `tiny`, `base`, `small`, `medium`, `large-v3` |
+| `EDEN_WHISPER_DEVICE` | `auto` | `auto`, `cpu`, `cuda` |
+| `OLLAMA_URL` / `OLLAMA_MODEL` | `http://127.0.0.1:11434` / `llama3.2` | Optional AI assist |
+| `PEXELS_API_KEY` | *(none)* | Optional stock footage |
+
+### Optional: Ollama
+
+Install [Ollama](https://ollama.com), run `ollama pull llama3.2`, then turn on **Settings → AI assist** and test the connection. When you tick *AI assist* on a video, Eden sends the transcript to the Ollama address you configured and uses the reply for the title, description, hashtags and emphasis words. Invalid or missing replies are ignored.
+
+### Optional: working offline from the first run
+
+Download the Whisper model once on a connected machine (`python -c "from faster_whisper import WhisperModel; WhisperModel('base')"`) and copy the Hugging Face cache (`~/.cache/huggingface`) to the offline machine, or set `HF_HOME`.
+
+### Fonts
+
+Captions default to **Inter**. Install it, or set a different installed font under **Settings → Branding**. You can also drop `.ttf` or `.otf` files into `data/assets/fonts/` and Eden will use them.
+
+## Security
+
+Eden is a single-user app with no accounts. By default it listens on `127.0.0.1`, so only your computer can reach it. If you bind it to a network interface or put it on a server:
+
+- set `EDEN_PASSWORD` (HTTP basic auth) **and** put it behind HTTPS, for example a reverse proxy such as Caddy or nginx, because basic auth over plain HTTP is readable on the network;
+- remember that uploaded files are stored unencrypted in the data directory.
+
+## Project layout
+
+```
+eden/
+  main.py        FastAPI app and routes
+  pipeline.py    The end-to-end edit
+  editor.py      FFmpeg filter graphs (cut, reframe, zoom, overlay, captions, encode)
+  timeline.py    Keep-segment planning, filler cuts, source→output time mapping
+  transcript.py  Whisper, SRT/VTT import, caching
+  captions.py    Chunking, ASS and SRT generation
+  broll.py       Cutaway planning and Pexels lookup
+  keywords.py    Dependency-free keyword extraction
+  ai.py          Optional Ollama client
+  presets.py     Platforms, styles, pacing, filler lists
+  jobs.py        Background render queue
+  db.py          SQLite storage
+  static/        The web interface (plain HTML, CSS and ES modules, no build step)
+tests/           pytest suite (includes real FFmpeg renders)
+```
+
+## API
+
+Interactive docs are served at `/api/docs`. The main endpoints:
+
+| Method | Path | |
+|---|---|---|
+| `POST` | `/api/projects` | Upload a video |
+| `POST` | `/api/projects/{id}/render` | Render for one or more platforms |
+| `GET` | `/api/videos` | List videos (filters: `status`, `platform`, `q`) |
+| `GET` | `/api/videos/{id}` | Status, progress, stats |
+| `GET` | `/api/videos/{id}/download` | The finished MP4 |
+
+## Development
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+make test      # pytest
+make lint      # ruff
+```
+
+The test suite runs real FFmpeg renders (about three minutes). Tests that need FFmpeg skip themselves if it is missing, and CI runs without the speech engine to keep the no-Whisper path honest.
+
+## Known limits
+
+- **Speech accuracy.** Whisper's `base` model is fast but can mishear; use `small` or larger for important videos. Whisper tends to leave out disfluencies, so Eden primes it to keep them, but some "ums" will still slip through.
+- **Reframing is geometric, not subject-aware.** There is no face tracking; use the crop-position slider or "Fit with blurred backdrop" for off-centre subjects.
+- **Very long, very choppy videos.** Cuts are built as one FFmpeg filter graph. Hours of footage with thousands of cuts will use a lot of memory and time.
+- **No music, transitions or manual timeline editing.** Eden is an automatic editor, not a non-linear editor.
+- **Stock footage** requires your own Pexels API key and follows [Pexels' licence and terms](https://www.pexels.com/license/).
+- Make sure you have the rights to footage, music and B-roll you publish.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

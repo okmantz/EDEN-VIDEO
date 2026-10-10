@@ -1,0 +1,4 @@
+# Everything Eden needs, including the local speech engine used for captions
+# and filler-word removal. Use requirements-core.txt to skip the speech engine.
+-r requirements-core.txt
+faster-whisper>=1.0

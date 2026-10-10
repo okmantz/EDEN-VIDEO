@@ -1,0 +1,43 @@
+[project]
+name = "eden-video"
+version = "1.0.0"
+description = "EDEN VIDEO: a professional video editing app that turns raw footage into finished videos for Instagram, TikTok, Facebook and YouTube."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "python-multipart>=0.0.9",
+  "pydantic>=2.6",
+]
+
+[project.optional-dependencies]
+speech = ["faster-whisper>=1.0"]
+dev = ["pytest>=8", "httpx>=0.27", "ruff>=0.5"]
+
+[project.scripts]
+eden = "eden.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["eden*"]
+
+[tool.setuptools.package-data]
+eden = ["static/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+ignore = ["E501", "B008", "B904", "B905", "B007", "E702", "E741"]
