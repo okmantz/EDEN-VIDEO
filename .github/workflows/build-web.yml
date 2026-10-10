@@ -1,0 +1,111 @@
+name: Build downloadable app
+
+# Builds EDEN VIDEO as a ready-to-run app for Linux, Windows and macOS.
+# No Python or FFmpeg needed to run the result.
+#
+#   Run it by hand:  Actions tab -> "Build downloadable app" -> Run workflow
+#   Publish a release:  git tag v1.0.0 && git push --tags   (the downloads are attached to the release)
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+    branches: [main]
+    paths:
+      - "eden/**"
+      - "packaging/**"
+      - "run_eden.py"
+      - "requirements*.txt"
+      - ".github/workflows/build-web.yml"
+
+concurrency:
+  group: build-web-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: Build for ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,  label: Linux,   slug: linux,   exe: eden-video,     soft: "" }
+          - { os: windows-latest, label: Windows, slug: windows, exe: eden-video.exe, soft: "" }
+          # macOS FFmpeg comes from the static-ffmpeg package; if it cannot be verified the app is still
+          # built, and on first run it offers to install FFmpeg with Homebrew.
+          - { os: macos-latest,   label: macOS,   slug: macos,   exe: eden-video,     soft: "--soft" }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install build tools and Eden's packages
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt "pyinstaller>=6.10"
+          if [ "${{ matrix.slug }}" = "macos" ]; then pip install static-ffmpeg; fi
+          python -c "import eden, faster_whisper; print('imports ok')"
+
+      - name: Get FFmpeg and check it can encode video and draw captions
+        run: python packaging/fetch_ffmpeg.py build/ffbin ${{ matrix.soft }}
+
+      - name: Build the app
+        run: EDEN_BUNDLE_BIN=build/ffbin pyinstaller packaging/eden-video.spec --noconfirm --distpath dist --workpath build/work
+
+      - name: Test the built app (starts it and renders a real video)
+        run: python packaging/smoke_test.py "dist/EDEN-VIDEO/${{ matrix.exe }}"
+
+      - name: Add the "start here" files
+        run: |
+          cp packaging/README-FIRST.txt dist/EDEN-VIDEO/README-FIRST.txt
+          cp LICENSE dist/EDEN-VIDEO/LICENSE.txt
+          if [ "${{ matrix.slug }}" = "macos" ]; then
+            cp "packaging/Start EDEN VIDEO.command" "dist/EDEN-VIDEO/Start EDEN VIDEO.command"
+            chmod +x "dist/EDEN-VIDEO/Start EDEN VIDEO.command" dist/EDEN-VIDEO/eden-video
+          fi
+
+      - name: Make the download
+        run: |
+          if [ "${{ matrix.slug }}" = "windows" ]; then
+            python -c "import shutil; shutil.make_archive('EDEN-VIDEO-windows', 'zip', 'dist', 'EDEN-VIDEO')"
+            echo "ASSET=EDEN-VIDEO-windows.zip" >> "$GITHUB_ENV"
+          else
+            tar -czf "EDEN-VIDEO-${{ matrix.slug }}.tar.gz" -C dist EDEN-VIDEO
+            echo "ASSET=EDEN-VIDEO-${{ matrix.slug }}.tar.gz" >> "$GITHUB_ENV"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EDEN-VIDEO-${{ matrix.slug }}
+          path: ${{ env.ASSET }}
+          compression-level: 0
+          retention-days: 30
+          if-no-files-found: error
+
+  release:
+    name: Attach downloads to the release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: downloads
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: downloads/*
+          generate_release_notes: true
