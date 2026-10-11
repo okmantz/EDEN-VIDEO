@@ -89,6 +89,25 @@ def model_cached(model_size: str, device: str) -> bool:
     return (model_size, device) in _models
 
 
+def load_wav_samples(wav: Path):
+    """Read Eden's 16 kHz mono 16-bit WAV into the float32 array Whisper wants.
+
+    Handing Whisper an array (instead of a file name) skips faster-whisper's own audio decoder,
+    which breaks whenever its PyAV dependency is a newer or older version than it expects."""
+    import wave
+
+    import numpy as np
+    with wave.open(str(wav), "rb") as w:
+        if w.getsampwidth() != 2 or w.getframerate() != 16000:
+            raise ValueError("expected 16 kHz 16-bit audio")
+        raw = w.readframes(w.getnframes())
+        channels = w.getnchannels()
+    data = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+    if channels > 1:
+        data = data.reshape(-1, channels).mean(axis=1)
+    return data
+
+
 def transcribe_whisper(wav: Path, model_size: str, device: str, language: Optional[str],
                        duration: float, on_progress: Optional[Callable[[float], None]] = None,
                        handle: Optional[ProcHandle] = None) -> tuple[list[Word], str]:
@@ -102,7 +121,7 @@ def transcribe_whisper(wav: Path, model_size: str, device: str, language: Option
             _models[key] = WhisperModel(model_size, device=device, compute_type="int8")
         model = _models[key]
     segments, info = model.transcribe(  # type: ignore[attr-defined]
-        str(wav), language=None if not language or language == "auto" else language,
+        load_wav_samples(wav), language=None if not language or language == "auto" else language,
         word_timestamps=True, vad_filter=False, condition_on_previous_text=False,
         initial_prompt=DISFLUENCY_PROMPT,
     )
