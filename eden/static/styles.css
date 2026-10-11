@@ -367,3 +367,24 @@ details.more[open] summary svg { transform: rotate(90deg); }
   background: rgba(255, 180, 84, .1); color: var(--text); border-radius: 12px; line-height: 1.5; max-width: 1168px; }
 .setup-banner[hidden] { display: none; }
 .setup-banner code { background: var(--bg-deep); padding: 2px 8px; border-radius: 6px; user-select: all; word-break: break-all; }
+
+/* ---- Music & sounds library ---- */
+.tracks { display: grid; gap: 12px; }
+.track { background: var(--panel); border: 1px solid var(--line-soft); border-radius: 12px;
+  padding: 12px 14px; display: grid; grid-template-columns: 40px 1fr auto auto; gap: 14px; align-items: center; }
+.track .tico { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center;
+  background: var(--bg-deep); color: var(--amber); }
+.track .tico svg { width: 20px; height: 20px; }
+.track .tbody { min-width: 0; }
+.track .tbody b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.track input[type="text"] { background: var(--bg-deep); border: 1px solid var(--line-soft);
+  border-radius: 8px; padding: 7px 10px; color: inherit; font: inherit; }
+
+/* ---- Fine-tune editor ---- */
+.segrow { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line-soft); }
+.segrow:first-child { border-top: 0; }
+.segrow input[type="number"] { width: 76px; background: var(--bg-deep); border: 1px solid var(--line-soft);
+  border-radius: 8px; padding: 7px 8px; color: inherit; font: inherit; }
+.caprow { display: grid; grid-template-columns: 64px 1fr; gap: 10px; align-items: center; padding: 6px 0; }
+.caprow textarea { background: var(--bg-deep); border: 1px solid var(--line-soft); border-radius: 8px;
+  padding: 8px 10px; color: inherit; font: inherit; resize: vertical; min-height: 34px; }
