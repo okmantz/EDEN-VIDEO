@@ -3,8 +3,10 @@ import { api } from './api.js';
 import { $, esc, icon, toast } from './ui.js';
 import { home } from './home.js';
 import { create } from './create.js';
+import { edit } from './editor.js';
 import { saved } from './saved.js';
 import { library } from './library.js';
+import { music } from './music.js';
 import { settings } from './settings.js';
 
 const ROUTES = {
@@ -12,6 +14,7 @@ const ROUTES = {
   create: { title: 'Create', icon: 'create', page: create },
   saved: { title: 'Saved videos', icon: 'film', page: saved },
   library: { title: 'B-roll library', icon: 'layers', page: library },
+  music: { title: 'Music & sounds', icon: 'music', page: music },
   settings: { title: 'Settings', icon: 'settings', page: settings },
 };
 
@@ -36,8 +39,9 @@ async function refreshBadge() {
 async function render() {
   const token = ++navToken;
   const [seg, ...params] = location.hash.replace(/^#\/?/, '').split('?')[0].split('/');
-  const route = ROUTES[seg] || ROUTES[''];
-  const key = ROUTES[seg] ? seg : '';
+  // The fine-tune editor is reached from video cards, not from the nav rail.
+  const route = seg === 'edit' ? { title: 'Fine-tune', page: edit } : (ROUTES[seg] || ROUTES['']);
+  const key = seg === 'edit' ? '' : (ROUTES[seg] ? seg : '');
   if (typeof cleanup === 'function') { try { cleanup(); } catch { /* ignore */ } }
   cleanup = null;
   drawNav(key);

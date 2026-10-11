@@ -117,6 +117,7 @@ async function configureView(root, ctx, pid) {
   try { project = await api(`/projects/${pid}`); }
   catch { toast('That upload could not be found.', 'err'); location.hash = '#/create'; return; }
   const { meta, health, settings } = ctx;
+  const [musicLib, sfxLib] = await Promise.all([api('/music').catch(() => []), api('/sfx').catch(() => [])]);
   const styles = Object.fromEntries(meta.styles.map((s) => [s.key, s]));
   const st = {
     style: styles[settings.default_style] ? settings.default_style : meta.styles[0].key,
@@ -179,6 +180,16 @@ async function configureView(root, ctx, pid) {
               ${[['off', 'Off'], ['low', 'Light'], ['medium', 'Balanced'], ['high', 'Lots']].map(([k, l]) => `<button type="button" data-seg="broll" data-val="${k}" aria-pressed="${k === st.broll}">${l}</button>`).join('')}
             </div></div></div>
 
+          <div class="switch" style="cursor:default"><div class="txt"><b>Background music</b>
+            <small>Lays a track under the video and ducks it under your voice automatically. <a href="#/music" style="color:var(--amber)">Manage music & sounds</a></small>
+            <div style="margin-top:10px;display:flex;gap:12px;flex-wrap:wrap;align-items:end">
+              <label class="field" style="min-width:200px;flex:1"><span>Track</span>
+                <select id="optMusic"><option value="">No music</option>
+                  ${musicLib.map((t) => `<option value="${esc(t.id)}">${esc(t.name)} (${fmtDur(t.duration)})</option>`).join('')}</select></label>
+              <label class="field" style="min-width:150px"><span>Music volume</span>
+                <input type="range" id="optMusicVol" min="0" max="100" value="35"></label>
+            </div></div></div>
+
           <details class="more"><summary>${icon('chevron')}More options</summary>
             <div class="form-grid">
               <label class="field full"><span>Title</span><input type="text" id="optTitle" maxlength="140" value="${esc(project.name)}"></label>
@@ -189,6 +200,10 @@ async function configureView(root, ctx, pid) {
                 <button type="button" data-seg="framing" data-val="fit" aria-pressed="false">Fit with blurred backdrop</button></div></div>
               <label class="field" id="focusWrap"><span>Crop position <span class="muted" id="focusVal">Centre</span></span><input type="range" id="optFocus" min="0" max="100" value="50"></label>
               <label class="field"><span>Spoken language</span><select id="optLang">${LANGS.map(([k, l]) => `<option value="${k}" ${k === (settings.language || 'auto') ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+              <label class="field"><span>Whoosh on punch-in zooms</span><select id="optWhoosh"><option value="">None</option>
+                ${sfxLib.map((t) => `<option value="${esc(t.id)}">${esc(t.name)} (${fmtDur(t.duration)})</option>`).join('')}</select></label>
+              <label class="field"><span>Pop on emphasized words</span><select id="optPop"><option value="">None</option>
+                ${sfxLib.map((t) => `<option value="${esc(t.id)}">${esc(t.name)} (${fmtDur(t.duration)})</option>`).join('')}</select></label>
               ${sw('remove_filler_phrases', 'Also cut “you know” and “I mean”', 'Off by default because they are sometimes real content.', false, 'full')}
               ${sw('use_ai', 'AI assist (Ollama)', aiReady ? 'Writes a title, description and hashtags, and picks emphasis words. Falls back automatically if Ollama is unreachable.' : 'Turn on Ollama in Settings to enable this. Everything else works without it.', false, 'full', !aiReady)}
               ${sw('logo', 'Add my logo', logoReady ? 'Places your logo in the top corner.' : 'Upload a logo in Settings to use this.', !!settings.logo_enabled && logoReady, 'full', !logoReady)}
@@ -301,6 +316,8 @@ async function configureView(root, ctx, pid) {
       framing: st.framing, focus: +$v('#optFocus').value / 100, clean_audio: checked('clean_audio'),
       language: lang === 'auto' ? null : lang, use_ai: aiReady && checked('use_ai'),
       logo: logoReady ? checked('logo') : null,
+      music_id: $v('#optMusic').value || null, music_volume: +$v('#optMusicVol').value / 100,
+      whoosh_sfx_id: $v('#optWhoosh').value || null, pop_sfx_id: $v('#optPop').value || null,
     };
     btn.disabled = true;
     try {

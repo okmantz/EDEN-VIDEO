@@ -39,6 +39,7 @@ export function cardHtml(v) {
         ${warn ? `<span class="pill warn" title="${esc(v.warnings.join(' '))}">${plural(warn, 'note')}</span>` : ''}</div>
       <div class="vactions">
         <a class="btn sm" href="${esc(v.download_url)}" download>${icon('download')}Download</a>
+        <a class="icon-btn" href="#/edit/${esc(v.id)}" aria-label="Fine-tune" title="Fine-tune this edit">${icon('scissors')}</a>
         <button class="icon-btn" data-act="details" aria-label="Details">${icon('info')}</button>
         <button class="icon-btn danger" data-act="delete" aria-label="Delete">${icon('trash')}</button>
       </div>`;
