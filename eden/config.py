@@ -75,6 +75,14 @@ class Config:
         return self.data_dir / "broll"
 
     @property
+    def music_dir(self) -> Path:
+        return self.data_dir / "music"
+
+    @property
+    def sfx_dir(self) -> Path:
+        return self.data_dir / "sfx"
+
+    @property
     def cache_dir(self) -> Path:
         return self.data_dir / "cache"
 
@@ -92,7 +100,7 @@ class Config:
 
     def ensure_dirs(self) -> None:
         for d in (self.data_dir, self.uploads_dir, self.renders_dir, self.broll_dir,
-                  self.cache_dir, self.work_dir, self.assets_dir):
+                  self.music_dir, self.sfx_dir, self.cache_dir, self.work_dir, self.assets_dir):
             d.mkdir(parents=True, exist_ok=True)
 
 

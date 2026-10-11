@@ -62,6 +62,20 @@ CREATE TABLE IF NOT EXISTS broll (
     thumb_path TEXT,
     created_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS music (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    path TEXT NOT NULL,
+    duration REAL DEFAULT 0,
+    created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sfx (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    path TEXT NOT NULL,
+    duration REAL DEFAULT 0,
+    created_at REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -81,7 +95,7 @@ class Database:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.conn() as c:
             c.executescript(SCHEMA)
-            for table in ("projects", "videos", "broll", "settings"):
+            for table in ("projects", "videos", "broll", "music", "sfx", "settings"):
                 TABLE_COLUMNS[table] = {r["name"] for r in c.execute(f"PRAGMA table_info({table})")}
 
     @contextmanager

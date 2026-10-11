@@ -54,6 +54,20 @@ def group_words(words: list[Word], max_words: int, max_chars: int, gap_break: fl
     return chunks
 
 
+def group_words_indexed(words: list[Word], max_words: int, max_chars: int,
+                        gap_break: float = 0.6) -> list[tuple[Chunk, int, int]]:
+    """Like :func:`group_words` but also returns each chunk's [start, end) word indices,
+    so the fine-tune editor can map a caption-line edit back to its words."""
+    chunks = group_words(words, max_words, max_chars, gap_break)
+    out: list[tuple[Chunk, int, int]] = []
+    i = 0
+    for ch in chunks:
+        n = len(ch.words)
+        out.append((ch, i, i + n))
+        i += n
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # ASS
 # --------------------------------------------------------------------------- #

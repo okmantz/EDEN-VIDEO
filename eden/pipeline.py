@@ -106,6 +106,8 @@ def run_pipeline(svc: Services, video_id: str, handle: media.ProcHandle) -> None
     work = cfg.work_dir / video_id
     work.mkdir(parents=True, exist_ok=True)
     src = Path(project["path"])
+    remix = opts.remix
+    auto_cut = not (remix and remix.segments is not None)
 
     try:
         # ---- 1. read ----------------------------------------------------- #
@@ -121,7 +123,7 @@ def run_pipeline(svc: Services, video_id: str, handle: media.ProcHandle) -> None
         pacing_key = opts.pacing or style["pacing"]
         pacing = PACING[pacing_key]
         silences: list[tuple[float, float]] = []
-        if opts.remove_silence and info.has_audio:
+        if opts.remove_silence and info.has_audio and auto_cut:
             rep.set("Finding silences", 4)
             silences = media.detect_silences(cfg, src, pacing["noise_db"], pacing["min_silence"], handle)
         elif opts.remove_silence and not info.has_audio:
@@ -144,7 +146,10 @@ def run_pipeline(svc: Services, video_id: str, handle: media.ProcHandle) -> None
 
         # ---- 4. plan the cut -------------------------------------------- #
         rep.set("Planning the edit", 47)
-        if opts.remove_silence and info.has_audio:
+        if remix and remix.segments is not None:
+            # The fine-tune editor's cut is the truth: use it verbatim.
+            segs = [(float(s), float(e)) for s, e in remix.segments if float(e) > float(s)]
+        elif opts.remove_silence and info.has_audio:
             segs = tl.speech_segments(silences, duration, pacing["keep"] / 2)
             if not segs:
                 segs = [(0.0, duration)]
@@ -152,7 +157,7 @@ def run_pipeline(svc: Services, video_id: str, handle: media.ProcHandle) -> None
             segs = [(0.0, duration)]
         after_silence = sum(e - s for s, e in segs)
         filler_cuts: list[tuple[tuple[float, float], str]] = []
-        if opts.remove_fillers and words:
+        if opts.remove_fillers and words and auto_cut:
             filler_cuts = tl.find_filler_cuts(words, phrases=opts.remove_filler_phrases)
             segs = tl.subtract(segs, [c for c, _ in filler_cuts])
         segs = tl.snap(segs, fps, duration)
@@ -175,6 +180,17 @@ def run_pipeline(svc: Services, video_id: str, handle: media.ProcHandle) -> None
                             f"{limit}s or under; consider trimming or splitting it.")
 
         # ---- 5. optional AI + keywords ---------------------------------- #
+        if remix and remix.caption_edits and words:
+            # Text corrections from the fine-tune editor, applied to the
+            # source-timed words before they are re-timed to the new cut.
+            for key, text in remix.caption_edits.items():
+                try:
+                    idx = int(key)
+                except (TypeError, ValueError):
+                    continue
+                if 0 <= idx < len(words) and str(text).strip():
+                    w = words[idx]
+                    words[idx] = Word(w.start, w.end, str(text).strip()[:80])
         out_words = timeline.map_words(words) if words else []
         caption_words = [w for w in out_words if w.norm not in FILLER_WORDS]
         transcript_text = " ".join(w.text for w in caption_words)
@@ -257,6 +273,63 @@ def run_pipeline(svc: Services, video_id: str, handle: media.ProcHandle) -> None
         stats["broll_count"] = len(placements)
         meta["broll"] = [p.as_dict() for p in placements]
 
+        # ---- 8b. fine-tune editor changes to b-roll ---------------------- #
+        if remix and (remix.drop_broll or remix.add_broll):
+            drop = {int(i) for i in remix.drop_broll if 0 <= int(i) < len(placements)}
+            placements = [p for i, p in enumerate(placements) if i not in drop]
+            for add in remix.add_broll:
+                clip_row = db.get("broll", add.clip_id)
+                if clip_row and Path(clip_row["path"]).exists():
+                    clip = broll_mod.Clip(path=clip_row["path"], duration=clip_row["duration"],
+                                          tags=broll_mod.parse_tags(clip_row["tags"] or ""),
+                                          name=clip_row["name"])
+                    length = min(add.length, clip.duration, max(0.5, out_total - add.start - 0.3))
+                    if length >= 1.2:
+                        placements.append(broll_mod.Placement(round(add.start, 2),
+                                                            round(add.start + length, 2),
+                                                            clip, 0.0, "manual"))
+            stats["broll_count"] = len(placements)
+            meta["broll"] = [p.as_dict() for p in placements]
+
+        # ---- 8c. background music + sound effects ------------------------ #
+        music_mix: Optional[editor.MusicMix] = None
+        if opts.music_id:
+            mrow = db.get("music", opts.music_id)
+            if mrow and Path(mrow["path"]).exists():
+                music_mix = editor.MusicMix(path=mrow["path"], volume=opts.music_volume,
+                                            duck=info.has_audio)
+                stats["music"] = mrow["name"]
+            else:
+                warnings.append("The chosen music track was missing, so the video was made without music.")
+        sfx_hits: list[editor.SfxHit] = []
+        zoom_on = style["zoom"] if opts.zoom is None else opts.zoom
+        if opts.whoosh_sfx_id and zoom_on and segs:
+            wrow = db.get("sfx", opts.whoosh_sfx_id)
+            if wrow and Path(wrow["path"]).exists():
+                # Punch-in zooms land on kept-segment starts (output time).
+                for i, (s, e) in enumerate(segs):
+                    if i > 0 and (e - s) >= 1.2:
+                        sfx_hits.append(editor.SfxHit(path=wrow["path"],
+                                                      at=max(0.0, timeline.offsets[i] - 0.12),
+                                                      volume=0.7))
+            else:
+                warnings.append("The chosen whoosh sound was missing, so no whoosh effects were added.")
+        if opts.pop_sfx_id and caption_words:
+            prow = db.get("sfx", opts.pop_sfx_id)
+            if prow and Path(prow["path"]).exists():
+                emph = {kw_mod.stem(k) for k in keywords}
+                hits = 0
+                for w in caption_words:
+                    if hits >= 12:
+                        break
+                    if kw_mod.stem(w.norm) in emph:
+                        sfx_hits.append(editor.SfxHit(path=prow["path"], at=w.start, volume=0.55))
+                        hits += 1
+            else:
+                warnings.append("The chosen pop sound was missing, so no pop effects were added.")
+        stats["sfx_hits"] = len(sfx_hits)
+        meta["segments"] = [[round(s, 3), round(e, 3)] for s, e in segs]
+
         # ---- 9. stage 2: compose + encode -------------------------------- #
         logo_path: Optional[Path] = None
         logo_on = settings.get("logo_enabled") if opts.logo is None else opts.logo
@@ -269,7 +342,8 @@ def run_pipeline(svc: Services, video_id: str, handle: media.ProcHandle) -> None
         fplan = editor.FinalPlan(width=W, height=H, fps=fps, duration=out_total, vbitrate=plat["vbitrate"],
                                  broll=placements, ass_name=ass_name,
                                  fonts_dir=str(fonts) if fonts.is_dir() else None, logo=logo_path,
-                                 logo_top=plat["safe_top"] + 0.01, has_audio=info.has_audio)
+                                 logo_top=plat["safe_top"] + 0.01, has_audio=info.has_audio,
+                                 music=music_mix, sfx=sfx_hits)
         out_path = cfg.renders_dir / f"{video_id}.mp4"
         rep.set("Adding captions & b-roll", 78)
         editor.render_final(cfg, cut_path, fplan, out_path, work, rep.span("Adding captions & b-roll", 78, 97), handle)

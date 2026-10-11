@@ -130,6 +130,25 @@ def render_cut(cfg: Config, src: Path, plan: CutPlan, dst: Path, work: Path,
 # Stage 2
 # --------------------------------------------------------------------------- #
 @dataclass
+class MusicMix:
+    """A background music bed mixed under the finished video.
+
+    The track is looped to the video length and ducked under the speech with
+    sidechain compression, so the voice always stays on top."""
+    path: str
+    volume: float = 0.35      # 0..1, applied before ducking
+    duck: bool = True         # duck under speech (needs an audio track)
+
+
+@dataclass
+class SfxHit:
+    """One sound-effect placement on the finished timeline."""
+    path: str
+    at: float                 # seconds into the finished video
+    volume: float = 0.8
+
+
+@dataclass
 class FinalPlan:
     width: int
     height: int
@@ -142,6 +161,8 @@ class FinalPlan:
     logo: Optional[Path] = None
     logo_top: float = 0.08
     has_audio: bool = True
+    music: Optional[MusicMix] = None
+    sfx: list[SfxHit] = field(default_factory=list)
 
 
 _SAFE_PATH = re.compile(r"^[A-Za-z0-9_./\-]+$")
@@ -176,18 +197,75 @@ def build_final_graph(plan: FinalPlan) -> str:
     return ";\n".join(lines) + "\n"
 
 
+def build_final_audio_graph(plan: FinalPlan, music_idx: Optional[int],
+                            sfx_idxs: list[int]) -> Optional[str]:
+    """Audio mix for stage 2. Returns None when there is nothing to mix, in which
+    case the caller keeps the old ``-map 0:a -c:a copy`` path.
+
+    Layout: speech (and SFX) keep their level; the music bed is ducked under the
+    speech with sidechain compression when the video has an audio track.
+    """
+    if plan.music is None and not plan.sfx:
+        return None
+    lines: list[str] = []
+    if plan.has_audio:
+        if plan.music is not None and plan.music.duck:
+            lines.append("[0:a]asplit=2[spk][key]")
+        else:
+            lines.append("[0:a]anull[spk]")
+    mix: list[str] = []
+    if plan.has_audio:
+        mix.append("[spk]")
+    if plan.music is not None:
+        assert music_idx is not None
+        lines.append(f"[{music_idx}:a]aresample=48000,aformat=channel_layouts=stereo,"
+                     f"volume={_f(plan.music.volume)}[mus]")
+        if plan.has_audio and plan.music.duck:
+            lines.append("[mus][key]sidechaincompress=threshold=-21dB:ratio=5:"
+                         "attack=15:release=450[musd]")
+        else:
+            lines.append("[mus]anull[musd]")
+        mix.append("[musd]")
+    for j, (hit, idx) in enumerate(zip(plan.sfx, sfx_idxs)):
+        ms = max(0, int(round(hit.at * 1000)))
+        lines.append(f"[{idx}:a]aresample=48000,aformat=channel_layouts=stereo,"
+                     f"adelay={ms}|{ms},volume={_f(hit.volume)}[sfx{j}]")
+        mix.append(f"[sfx{j}]")
+    lines.append("".join(mix) + f"amix=inputs={len(mix)}:duration=first:"
+                 "dropout_transition=0:normalize=0,aresample=48000[aout]")
+    return ";\n".join(lines) + "\n"
+
+
 def render_final(cfg: Config, cut_path: Path, plan: FinalPlan, dst: Path, work: Path,
                  on_progress: Optional[Callable[[float], None]] = None,
                  handle: Optional[ProcHandle] = None) -> None:
-    script = work / "final_graph.txt"
-    script.write_text(build_final_graph(plan), encoding="utf-8")
     args: list[str] = ["-i", str(cut_path)]
+    n_inputs = 1
     for p in plan.broll:
         args += ["-ss", _f(p.clip_start), "-t", _f(p.end - p.start + 0.05), "-i", p.clip.path]
+        n_inputs += 1
     if plan.logo is not None:
         args += ["-i", str(plan.logo)]
+        n_inputs += 1
+    music_idx: Optional[int] = None
+    if plan.music is not None:
+        music_idx = n_inputs
+        args += ["-stream_loop", "-1", "-i", plan.music.path]
+        n_inputs += 1
+    sfx_idxs: list[int] = []
+    for hit in plan.sfx:
+        sfx_idxs.append(n_inputs)
+        args += ["-i", hit.path]
+        n_inputs += 1
+    vgraph = build_final_graph(plan)
+    agraph = build_final_audio_graph(plan, music_idx, sfx_idxs)
+    script = work / "final_graph.txt"
+    # The audio mix is a separate filterchain: it needs a ";" after [vout].
+    script.write_text(vgraph if not agraph else vgraph.rstrip("\n") + ";\n" + agraph, encoding="utf-8")
     args += ["-filter_complex_script", str(script), "-map", "[vout]"]
-    if plan.has_audio:
+    if agraph:
+        args += ["-map", "[aout]", "-c:a", "aac", "-b:a", "192k", "-ar", "48000"]
+    elif plan.has_audio:
         args += ["-map", "0:a", "-c:a", "copy"]
     maxrate = plan.vbitrate
     try:

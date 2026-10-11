@@ -16,19 +16,21 @@ from fastapi.staticfiles import StaticFiles
 
 from . import APP_NAME, TAGLINE, __version__
 from . import timeline as tl
+from . import captions as cap_mod
 from .ai import Ollama
 from .config import Config, load_config
 from .db import Database, new_id, now
 from .jobs import JobManager
 from .media import MediaError, detect_silences, make_thumbnail, probe, run_ffmpeg
-from .models import BrollPatch, RenderRequest, SettingsUpdate, VideoPatch
-from .presets import PACING, PLATFORMS, STYLES, public_catalog
+from .models import AudioPatch, BrollPatch, RemixPlan, RenderOptions, RenderRequest, SettingsUpdate, VideoPatch
+from .presets import PACING, PLATFORMS, STYLES, get_style, public_catalog
 from .services import Services
 from .system import ffmpeg_info, ffmpeg_install_plan
-from .transcript import parse_subtitles, save_words, whisper_available
+from .transcript import load_words, parse_subtitles, save_words, whisper_available
 
 STATIC_DIR = Path(__file__).parent / "static"
 VIDEO_EXTS = {".mp4", ".mov", ".m4v", ".mkv", ".webm", ".avi", ".mpg", ".mpeg", ".mts", ".m2ts", ".wmv", ".flv", ".3gp", ".ts"}
+AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".ogg", ".oga", ".flac", ".aac", ".wma"}
 CHUNK = 1024 * 1024
 
 
@@ -118,6 +120,32 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
                 "thumb_url": f"/api/broll/{b['id']}/thumb" if b.get("thumb_path") else None,
                 "file_url": f"/api/broll/{b['id']}/file"}
 
+    def audio_out(kind: str, a: dict) -> dict:
+        return {"id": a["id"], "name": a["name"], "duration": a["duration"],
+                "created_at": a["created_at"], "file_url": f"/api/{kind}/{a['id']}/file"}
+
+    def add_audio(kind: str, file: UploadFile) -> dict:
+        """Upload one music or sfx track. ``kind`` is 'music' or 'sfx'."""
+        original = Path(file.filename or "audio").name[:140]
+        ext = Path(original).suffix.lower()
+        if ext not in AUDIO_EXTS:
+            raise HTTPException(400, "Unsupported audio type. Use MP3, WAV, M4A, OGG or FLAC.")
+        aid = new_id()
+        dest = (cfg.music_dir if kind == "music" else cfg.sfx_dir) / f"{aid}{ext}"
+        save_upload(file, dest, 300 * 1024 * 1024)
+        try:
+            info = probe(cfg, dest)
+            if not info.has_audio:
+                raise MediaError("This file has no audio track.")
+        except MediaError as e:
+            dest.unlink(missing_ok=True)
+            raise HTTPException(400, str(e))
+        db.insert(kind, {"id": aid, "name": Path(original).stem[:120] or "Untitled",
+                         "path": str(dest), "duration": info.duration, "created_at": now()})
+        row = db.get(kind, aid)
+        assert row is not None
+        return audio_out(kind, row)
+
     def need(table: str, id_: str, label: str) -> dict:
         row = db.get(table, id_)
         if not row:
@@ -184,6 +212,8 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
             "time_saved": round(saved, 1),
             "fillers_removed": sum(int(_json(v["stats_json"], {}).get("fillers_removed", 0)) for v in done),
             "broll_clips": db.scalar("SELECT COUNT(*) FROM broll") or 0,
+            "music_tracks": db.scalar("SELECT COUNT(*) FROM music") or 0,
+            "sfx_sounds": db.scalar("SELECT COUNT(*) FROM sfx") or 0,
         }
 
     # --------------------------------------------------------------- settings
@@ -494,6 +524,127 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
         if not b.get("thumb_path") or not Path(b["thumb_path"]).exists():
             raise HTTPException(404, "No thumbnail")
         return FileResponse(b["thumb_path"], media_type="image/jpeg")
+
+    # ------------------------------------------------- music & sound effects
+    def _audio_routes(kind: str, label: str) -> None:
+        """Register the library endpoints for 'music' or 'sfx'."""
+
+        @app.get(f"/api/{kind}", operation_id=f"list_{kind}")
+        def list_audio() -> list[dict]:
+            return [audio_out(kind, a) for a in db.list(kind)]
+
+        @app.post(f"/api/{kind}", operation_id=f"add_{kind}")
+        def add_audio_route(file: UploadFile = File(...)) -> dict:
+            return add_audio(kind, file)
+
+        @app.patch(f"/api/{kind}/{{aid}}", operation_id=f"patch_{kind}")
+        def patch_audio(aid: str, body: AudioPatch) -> dict:
+            need(kind, aid, label)
+            fields = {k: v.strip() for k, v in body.model_dump().items() if v is not None}
+            if fields:
+                db.update(kind, aid, fields)
+            row = db.get(kind, aid)
+            assert row is not None
+            return audio_out(kind, row)
+
+        @app.delete(f"/api/{kind}/{{aid}}", operation_id=f"delete_{kind}")
+        def delete_audio(aid: str) -> dict:
+            a = need(kind, aid, label)
+            unlink(a["path"])
+            db.delete(kind, aid)
+            return {"ok": True}
+
+        @app.get(f"/api/{kind}/{{aid}}/file", operation_id=f"file_{kind}")
+        def audio_file(aid: str) -> FileResponse:
+            return FileResponse(need(kind, aid, label)["path"])
+
+    _audio_routes("music", "Track")
+    _audio_routes("sfx", "Sound")
+
+    # ------------------------------------------------------- fine-tune editor
+    @app.get("/api/videos/{vid}/plan")
+    def edit_plan(vid: str) -> dict:
+        """Everything the fine-tune editor needs: the kept segments (source time),
+        the caption lines with their word indices, and the B-roll placements."""
+        v = need("videos", vid, "Video")
+        if v["status"] != "done":
+            raise HTTPException(409, "The video is not finished yet.")
+        meta = _json(v["meta_json"], {})
+        project = need("projects", v["project_id"], "Project")
+        words: list[dict] = []
+        tp = project.get("transcript_path")
+        if tp and Path(tp).exists():
+            try:
+                loaded, _ = load_words(Path(tp))
+                words = [{"i": i, "start": round(w.start, 3), "end": round(w.end, 3), "text": w.text}
+                         for i, w in enumerate(loaded)]
+            except Exception:
+                words = []
+        chunks: list[dict] = []
+        if words:
+            from .transcript import Word as _Word
+            style = get_style(v["style"])
+            cs = style["caption"]
+            wobjs = [_Word(w["start"], w["end"], w["text"]) for w in words]
+            for ci, (ch, ws, we) in enumerate(cap_mod.group_words_indexed(
+                    wobjs, cs["max_words"], cs["max_chars_line"])):
+                chunks.append({"chunk": ci, "word_start": ws, "word_end": we,
+                               "start": round(ch.start, 2), "end": round(ch.end, 2),
+                               "text": ch.text})
+        broll = [{"index": i, **p} for i, p in enumerate(meta.get("broll") or [])]
+        return {
+            "video": video_out(v),
+            "source_duration": project["duration"],
+            "segments": meta.get("segments") or [],
+            "words": words,
+            "chunks": chunks,
+            "broll": broll,
+            "options": _json(v["options_json"], {}),
+        }
+
+    @app.post("/api/videos/{vid}/remix")
+    def remix_video(vid: str, body: dict) -> dict:
+        """Re-render a finished video with the fine-tune editor's changes.
+        Transcription is reused, so this skips straight to the new cut."""
+        v = need("videos", vid, "Video")
+        if v["status"] != "done":
+            raise HTTPException(409, "Only finished videos can be fine-tuned.")
+        project = need("projects", v["project_id"], "Project")
+        try:
+            plan = RemixPlan(**(body.get("plan") or {}))
+        except Exception as e:
+            raise HTTPException(400, f"Those edits are not valid: {e}")
+        dur = float(project["duration"] or 0)
+        if plan.segments is not None:
+            clean: list[tuple[float, float]] = []
+            for s, e in plan.segments:
+                s, e = round(float(s), 3), round(float(e), 3)
+                if e - s < 0.12 or s < 0 or e > dur + 0.05:
+                    raise HTTPException(400, "One of the segments is too short or out of range.")
+                clean.append((s, e))
+            if not clean:
+                raise HTTPException(400, "Keep at least one segment.")
+            plan.segments = clean
+        for add in plan.add_broll:
+            if not db.get("broll", add.clip_id):
+                raise HTTPException(404, "A B-roll clip for the new cutaway was not found.")
+            if add.start < 0 or add.start > dur:
+                raise HTTPException(400, "A cutaway time is out of range.")
+        opts = RenderOptions(**json.loads(v["options_json"] or "{}"))
+        opts.remix = plan
+        # Explicit null removes the sound choice; an absent key keeps the original.
+        for key in ("music_id", "music_volume", "whoosh_sfx_id", "pop_sfx_id"):
+            if key in body:
+                setattr(opts, key, body[key])
+        nid = new_id()
+        db.insert("videos", {
+            "id": nid, "project_id": v["project_id"], "title": v["title"],
+            "platform": v["platform"], "style": v["style"], "status": "queued",
+            "options_json": opts.model_dump_json(), "created_at": now()})
+        jobs.submit(nid)
+        row = db.get("videos", nid)
+        assert row is not None
+        return video_out(row)
 
     # ----------------------------------------------------------------- static
     @app.exception_handler(MediaError)

@@ -8,6 +8,21 @@ from pydantic import BaseModel, Field, field_validator
 from .presets import PLATFORMS, STYLES
 
 
+class BrollAdd(BaseModel):
+    """A manual cutaway the user placed in the fine-tune editor."""
+    start: float = Field(ge=0.0)
+    clip_id: str = Field(min_length=1, max_length=32)
+    length: float = Field(default=2.5, gt=0.4, le=15.0)
+
+
+class RemixPlan(BaseModel):
+    """User edits from the fine-tune editor, applied on top of the automatic edit."""
+    segments: Optional[list[tuple[float, float]]] = None   # source-time spans to keep; None = automatic
+    caption_edits: dict[int, str] = Field(default_factory=dict)  # source-word index -> new text
+    drop_broll: list[int] = Field(default_factory=list)    # placement indices to remove
+    add_broll: list[BrollAdd] = Field(default_factory=list)
+
+
 class RenderOptions(BaseModel):
     style: str = "viral_pop"
     title: Optional[str] = Field(default=None, max_length=140)
@@ -25,6 +40,11 @@ class RenderOptions(BaseModel):
     language: Optional[str] = Field(default=None, max_length=12)
     use_ai: bool = False
     logo: Optional[bool] = None            # None = follow Settings
+    music_id: Optional[str] = Field(default=None, max_length=32)
+    music_volume: float = Field(default=0.35, ge=0.0, le=1.0)
+    whoosh_sfx_id: Optional[str] = Field(default=None, max_length=32)
+    pop_sfx_id: Optional[str] = Field(default=None, max_length=32)
+    remix: Optional[RemixPlan] = None
 
     @field_validator("style")
     @classmethod
@@ -89,3 +109,7 @@ class VideoPatch(BaseModel):
 class BrollPatch(BaseModel):
     name: Optional[str] = Field(default=None, max_length=120)
     tags: Optional[str] = Field(default=None, max_length=300)
+
+
+class AudioPatch(BaseModel):
+    name: Optional[str] = Field(default=None, max_length=120)
