@@ -16,6 +16,8 @@ Eden runs on your own computer. Your footage is never uploaded anywhere, and it 
 | **B-roll** | Cuts to clips from your library when a tagged word is spoken, and fills long talking stretches. Optional stock footage from Pexels. |
 | **Reframing** | Fill the frame (with an adjustable crop position) or fit the whole frame over a blurred backdrop. |
 | **Polish** | Punch-in zooms at cuts, a colour grade per style, noise reduction, compression and loudness normalisation (-14 LUFS by default). |
+| **Music & sound effects** | Your own uploaded tracks, ducked under your voice automatically (sidechain compression), plus optional whoosh-on-zoom and pop-on-emphasis effects. Nothing is generated — every sound is a file you uploaded. |
+| **Fine-tune editor** | After the one-click edit, optionally tweak segments (keep/cut/trim), fix caption text, and add or remove B-roll cutaways, then re-render. |
 | **Multi-platform** | Pick any mix of Instagram Reels / Feed, TikTok, Facebook Reels / Feed, YouTube Shorts / YouTube. One render per platform. |
 | **Optional AI** | Ollama can write a title, description and hashtags and choose emphasis words. **Nothing depends on it.** |
 
@@ -147,7 +149,9 @@ Run **`python -m eden doctor`** (or `.venv/bin/python -m eden doctor`) first. It
 2. **Choose a look** – pick a style, tick the platforms you post to, and switch features on or off.
 3. **Create video** – watch progress per platform. Finished videos can be played, downloaded, renamed and re-edited from **Saved videos**.
 
-Other pages: **Home**, **B-roll library** (upload and tag cutaway clips), **Settings** (profile, branding and logo, defaults, speech model, Ollama, Pexels, system status).
+Other pages: **Home**, **B-roll library** (upload and tag cutaway clips), **Music & sounds** (background tracks and sound effects), **Settings** (profile, branding and logo, defaults, speech model, Ollama, Pexels, system status).
+
+After the one-click edit, any finished video has a **Fine-tune** button (the scissors icon on its card, also in Saved videos). It opens an editor where you can untick or trim segments, fix caption text line by line, remove cutaways or add your own at an exact time, and change the music and sound effects — then **Re-render**. Transcription is reused, so re-renders skip straight to the new cut. The main flow stays one click: the editor is always optional.
 
 ### Styles
 
@@ -183,13 +187,21 @@ Styles are plain data in [`eden/presets.py`](eden/presets.py). Adding or tweakin
 
 With no library clips and no Pexels key, Eden skips cutaways and relies on punch-in zooms to keep the edit lively.
 
+### Music and sound effects
+
+**Music & sounds** holds your own audio files — background tracks and short effects. Eden never generates audio.
+
+- **Background music:** pick a track when you create a video and set its volume. The track loops to the video length and is ducked under your voice with sidechain compression, so speech always stays on top. Videos with no audio track get the music at full set volume.
+- **Whoosh on punch-in zooms:** plays your chosen whoosh just before each zoom cut.
+- **Pop on emphasized words:** plays your chosen pop on the words Eden emphasises in the captions (capped at 12 per video).
+
 ### How the edit is built
 
 ```
 upload ─ probe ─ detect silence ─ transcribe (Whisper or .srt) ─ find fillers
       └─ keep-segments = speech − fillers, snapped to the frame grid
 Stage 1  FFmpeg: trim + concat segments, reframe, zoom, grade, clean audio, normalise loudness
-Stage 2  FFmpeg: overlay B-roll, burn captions (ASS), add logo, encode to platform spec
+Stage 2  FFmpeg: overlay B-roll, burn captions (ASS), add logo, mix music (ducked) + SFX, encode to platform spec
 ```
 
 Transcripts are cached per upload, so rendering the same video for several platforms transcribes once.
@@ -290,7 +302,7 @@ The test suite runs real FFmpeg renders (about three minutes). Tests that need F
 - **Speech accuracy.** Whisper's `base` model is fast but can mishear; use `small` or larger for important videos. Whisper tends to leave out disfluencies, so Eden primes it to keep them, but some "ums" will still slip through.
 - **Reframing is geometric, not subject-aware.** There is no face tracking; use the crop-position slider or "Fit with blurred backdrop" for off-centre subjects.
 - **Very long, very choppy videos.** Cuts are built as one FFmpeg filter graph. Hours of footage with thousands of cuts will use a lot of memory and time.
-- **No music, transitions or manual timeline editing.** Eden is an automatic editor, not a non-linear editor.
+- **The fine-tune editor re-renders, it does not scrub a timeline.** Edits are applied by running the pipeline again (transcription is reused, so it is fast), not by dragging clips on a timeline.
 - **Stock footage** requires your own Pexels API key and follows [Pexels' licence and terms](https://www.pexels.com/license/).
 - Make sure you have the rights to footage, music and B-roll you publish.
 
