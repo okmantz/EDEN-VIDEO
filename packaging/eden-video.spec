@@ -19,7 +19,7 @@ for pkg in ("faster_whisper", "ctranslate2", "tokenizers", "onnxruntime", "av", 
     binaries += b
     hidden += h
 
-bundle_bin = os.environ.get("EDEN_BUNDLE_BIN", "")
+bundle_bin = os.path.abspath(os.environ.get("EDEN_BUNDLE_BIN", "")) if os.environ.get("EDEN_BUNDLE_BIN") else ""
 if bundle_bin and os.path.isdir(bundle_bin):
     for name in os.listdir(bundle_bin):
         if name.lower().startswith(("ffmpeg", "ffprobe")):
