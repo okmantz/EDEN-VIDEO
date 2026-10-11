@@ -151,3 +151,40 @@ def test_delete_video_and_project_clean_up_files(client, sample_video):
     assert client.get(f"/api/videos/{v['id']}").status_code == 404
     assert client.delete(f"/api/projects/{p['id']}").status_code == 200
     assert client.get("/api/projects").json() == []
+
+
+def test_whisper_gets_audio_samples_not_a_file_name(tmp_path, monkeypatch, sample_video):
+    """faster-whisper's own decoder (PyAV) breaks across versions, so Eden decodes the audio itself."""
+    import sys
+    import types
+
+    import numpy as np
+
+    from eden import transcript
+    from eden.config import Config
+    from eden.media import extract_audio_wav
+
+    cfg = Config(data_dir=tmp_path)
+    wav = tmp_path / "a.wav"
+    extract_audio_wav(cfg, sample_video, wav)
+    seen = {}
+
+    class Seg:
+        start, end = 0.0, 1.0
+        words = [types.SimpleNamespace(word=" hello", start=0.1, end=0.5)]
+
+    class FakeModel:
+        def __init__(self, *a, **k):
+            pass
+
+        def transcribe(self, audio, **kw):
+            seen["audio"] = audio
+            return iter([Seg()]), types.SimpleNamespace(language="en")
+
+    monkeypatch.setitem(sys.modules, "faster_whisper", types.SimpleNamespace(WhisperModel=FakeModel))
+    monkeypatch.setattr(transcript, "whisper_available", lambda: True)
+    monkeypatch.setattr(transcript, "_models", {})
+    words, lang = transcript.transcribe_whisper(wav, "base", "cpu", "auto", 1.0)
+    assert [w.text for w in words] == ["hello"] and lang == "en"
+    assert isinstance(seen["audio"], np.ndarray) and seen["audio"].dtype == np.float32
+    assert 11.0 < len(seen["audio"]) / 16000 < 13.0 and float(np.abs(seen["audio"]).max()) > 0.05
