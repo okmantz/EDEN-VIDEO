@@ -15,8 +15,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import APP_NAME, TAGLINE, __version__
-from . import timeline as tl
 from . import captions as cap_mod
+from . import timeline as tl
 from .ai import Ollama
 from .config import Config, load_config
 from .db import Database, new_id, now

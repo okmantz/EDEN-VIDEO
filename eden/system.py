@@ -166,6 +166,27 @@ class FfmpegInfo:
         return bool(self.path) and self.libx264
 
 
+_graph_style: dict[str, bool] = {}
+
+
+def uses_slash_options(ffmpeg: str) -> bool:
+    """True for FFmpeg 7 and newer (and git builds), which read a filter graph from a file with
+    `-/filter_complex FILE`. Older versions use `-filter_complex_script FILE`, which FFmpeg 8 removed."""
+    if ffmpeg not in _graph_style:
+        import re
+        first = (_run([ffmpeg, "-hide_banner", "-version"]).splitlines() or [""])[0]
+        m = re.search(r"version\s+(?:n)?(\d+)\.", first, re.I)
+        _graph_style[ffmpeg] = bool(m and int(m.group(1)) >= 7) or bool(re.search(r"version\s+(N-|git-|\d{4,})", first))
+    return _graph_style[ffmpeg]
+
+
+def filter_graph_args(ffmpeg: str, script) -> list[str]:
+    """The FFmpeg arguments that load a complex filter graph from `script`, for any FFmpeg version."""
+    if uses_slash_options(ffmpeg):
+        return ["-/filter_complex", str(script)]
+    return ["-filter_complex_script", str(script)]
+
+
 def _run(argv: list[str], timeout: float = 15) -> str:
     try:
         r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, errors="replace")

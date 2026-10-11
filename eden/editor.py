@@ -16,6 +16,7 @@ from typing import Callable, Optional
 from .broll import Placement
 from .config import Config
 from .media import ProcHandle, run_ffmpeg
+from .system import filter_graph_args
 
 Span = tuple[float, float]
 AUDIO_FADE = 0.012
@@ -116,7 +117,7 @@ def render_cut(cfg: Config, src: Path, plan: CutPlan, dst: Path, work: Path,
                handle: Optional[ProcHandle] = None) -> None:
     script = work / "cut_graph.txt"
     script.write_text(build_cut_graph(plan), encoding="utf-8")
-    args = ["-i", str(src), "-filter_complex_script", str(script), "-map", "[vout]"]
+    args = ["-i", str(src), *filter_graph_args(cfg.ffmpeg, script), "-map", "[vout]"]
     if plan.has_audio:
         args += ["-map", "[aout]"]
     args += ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "14", "-pix_fmt", "yuv420p", "-r", str(plan.fps)]
@@ -262,7 +263,7 @@ def render_final(cfg: Config, cut_path: Path, plan: FinalPlan, dst: Path, work: 
     script = work / "final_graph.txt"
     # The audio mix is a separate filterchain: it needs a ";" after [vout].
     script.write_text(vgraph if not agraph else vgraph.rstrip("\n") + ";\n" + agraph, encoding="utf-8")
-    args += ["-filter_complex_script", str(script), "-map", "[vout]"]
+    args += [*filter_graph_args(cfg.ffmpeg, script), "-map", "[vout]"]
     if agraph:
         args += ["-map", "[aout]", "-c:a", "aac", "-b:a", "192k", "-ar", "48000"]
     elif plan.has_audio:
