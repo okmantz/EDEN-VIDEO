@@ -114,3 +114,14 @@ def test_data_dir_sits_next_to_the_app_when_frozen(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "executable", str(tmp_path / "eden-video"))
     assert Config.from_env().data_dir == (tmp_path / "data").resolve()
+
+
+def test_filter_graph_args_match_ffmpeg_generation(monkeypatch):
+    monkeypatch.setattr(system, "_graph_style", {})
+    monkeypatch.setattr(system, "_run", lambda argv, timeout=15: "ffmpeg version 6.1.1-3ubuntu5 Copyright")
+    assert system.filter_graph_args("ff", "g.txt") == ["-filter_complex_script", "g.txt"]
+    for banner in ("ffmpeg version 7.1.1 Copyright", "ffmpeg version n8.0 Copyright",
+                   "ffmpeg version N-127367-gb5902e69c7 Copyright", "ffmpeg version 2026-01-05-git-abc Copyright"):
+        monkeypatch.setattr(system, "_graph_style", {})
+        monkeypatch.setattr(system, "_run", lambda argv, timeout=15, b=banner: b)
+        assert system.filter_graph_args("ff", "g.txt") == ["-/filter_complex", "g.txt"], banner
