@@ -14,6 +14,7 @@ import { videoClip, genClip, textClip, baseClip, audioClip, end, projectDuration
 import { GENERATORS } from './generators.js';
 import { MUSIC } from './synth.js';
 import { builtinMedia } from './audio.js';
+import { betterQuery } from './stock.js';
 
 /* ------------------------------------------------------------------ looks */
 // Caption looks = text presets, plus how many words appear at a time. `plain` strips trailing punctuation (the "social" look).
@@ -393,6 +394,7 @@ export function inkFor(hex) {
 
 /* ------------------------------------------------------------------ b-roll */
 export const KEYWORDS = {
+  finance: ['money', 'cash', 'profit', 'profits', 'revenue', 'income', 'wealth', 'rich', 'dollar', 'dollars', 'invest', 'investing', 'investment', 'trading', 'trader', 'traders', 'market', 'markets', 'stock', 'stocks', 'crypto', 'bitcoin', 'forex', 'finance', 'financial', 'savings', 'budget', 'payout', 'funded', 'capital', 'portfolio', 'chart', 'charts', 'candle', 'candles', 'broker'],
   tech: ['software', 'app', 'apps', 'code', 'coding', 'data', 'ai', 'computer', 'digital', 'online', 'internet', 'website', 'automation', 'technology', 'system', 'systems', 'algorithm', 'startup', 'business', 'marketing', 'sales', 'money', 'growth', 'profit', 'revenue', 'strategy', 'trading', 'market', 'markets', 'invest', 'investing', 'investment', 'productivity', 'customers', 'customer', 'clients', 'client', 'company', 'brand', 'content', 'social', 'followers', 'audience', 'email', 'leads', 'funnel', 'ads', 'budget', 'price', 'pricing', 'cash', 'income', 'wealth', 'finance', 'stocks', 'crypto', 'platform', 'tool', 'tools', 'agency', 'team', 'meeting', 'office', 'work', 'job', 'career'],
   space: ['space', 'universe', 'galaxy', 'planet', 'future', 'infinite', 'vision', 'cosmic', 'stars', 'moon', 'orbit', 'rocket'],
   nature: ['nature', 'forest', 'ocean', 'water', 'sky', 'tree', 'trees', 'garden', 'weather', 'rain', 'snow', 'calm', 'peace', 'peaceful', 'morning', 'sunrise', 'sunset', 'river', 'lake', 'flowers', 'grass', 'earth', 'wind', 'green', 'outside', 'outdoors'],
@@ -412,8 +414,8 @@ export const KEYWORDS = {
 const STOP = new Set(`the and for that this with have from your about what when they them then than just like really very into over only also more most some make made been were will would could should there their because
   know think going want need get got cant dont thing things well right okay yeah actually basically literally something anything everything people
   here where which while after before again always never every other still being doing does done much many even such these those through`.split(/\s+/));
-const GENRE_DEFAULT = ['tech', 'cinema', 'lifestyle', 'nature'];
-const GENRE_QUERY = { tech: 'business technology', space: 'galaxy stars', nature: 'nature landscape', city: 'city night', fitness: 'workout gym', food: 'cooking food', music: 'concert music', edu: 'studying books', travel: 'travel adventure', romance: 'couple love', lifestyle: 'lifestyle morning', cinema: 'cinematic landscape', gaming: 'gaming', fun: 'celebration', dark: 'dark moody' };
+const GENRE_DEFAULT = ['tech', 'city', 'cinema', 'lifestyle', 'nature'];
+const GENRE_QUERY = { finance: 'cash money', tech: 'business technology', space: 'galaxy stars', nature: 'nature landscape', city: 'city skyline night', fitness: 'workout gym', food: 'cooking food', music: 'concert music', edu: 'studying books', travel: 'travel adventure', romance: 'couple love', lifestyle: 'lifestyle morning', cinema: 'cinematic landscape', gaming: 'gaming', fun: 'celebration', dark: 'dark moody' };
 
 const kwIndex = (() => { const m = new Map(); for (const [g, list] of Object.entries(KEYWORDS)) for (const k of list) if (!m.has(k)) m.set(k, g); return m; })();
 const genFor = (genre, seed) => {
@@ -447,7 +449,7 @@ export function pickBroll(words, total, density, { cutaway = 2.6, minGap = 6 } =
     const genre = GENRE_DEFAULT[seed % GENRE_DEFAULT.length];
     spots.push({ t, dur: cutaway, gen: genFor(genre, seed++).id, genre, word: near ? norm(near.text) : '', query: near ? norm(near.text) : GENRE_QUERY[genre] });
   }
-  return spots.sort((a, b) => a.t - b.t).map((s) => ({ ...s, query: kwIndex.has(s.query) || s.query.includes(' ') ? s.query : (GENRE_QUERY[s.genre] || s.query) }));
+  return spots.sort((a, b) => a.t - b.t).map((s) => ({ ...s, query: kwIndex.has(s.query) ? betterQuery(s.query) : s.query.includes(' ') ? s.query : (GENRE_QUERY[s.genre] || s.query) }));
 }
 
 /* ------------------------------------------------------------------ building */

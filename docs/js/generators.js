@@ -2,13 +2,14 @@
 // so the clips are tiny, royalty-free, loop-friendly and sharp on every canvas size.
 import { GLSL_COMMON } from './effects.js';
 import { EXTRA_GENERATORS } from './generators-extra.js';
+import { REAL_GENERATORS } from './generators-real.js';
 
 export const GENRES = [
   { id: 'nature', name: 'Nature' }, { id: 'city', name: 'City & Night' }, { id: 'tech', name: 'Tech & Business' },
   { id: 'space', name: 'Space' }, { id: 'lifestyle', name: 'Lifestyle & Beauty' }, { id: 'food', name: 'Food & Cozy' },
   { id: 'music', name: 'Music & Party' }, { id: 'gaming', name: 'Gaming & Retro' }, { id: 'fitness', name: 'Fitness & Energy' },
   { id: 'cinema', name: 'Cinematic' }, { id: 'edu', name: 'Education' }, { id: 'travel', name: 'Travel' },
-  { id: 'romance', name: 'Romance' }, { id: 'dark', name: 'Dark & Horror' }, { id: 'fun', name: 'Fun & Holiday' },
+  { id: 'romance', name: 'Romance' }, { id: 'dark', name: 'Dark & Horror' }, { id: 'fun', name: 'Fun & Holiday' }, { id: 'finance', name: 'Money & Finance' },
 ];
 
 export const genFragment = (body) => `#version 300 es
@@ -442,6 +443,7 @@ vec3 gen(vec2 uv,vec2 p,float t){
   else { float tt=(f-.22)/.78; float rad=tt*.42; float r=length(d); float a=atan(d.y,d.x); float spark=step(.5,hash(floor(a*24./6.28318)+id*13.+fi)); float ring=exp(-abs(r-rad*(.7+.3*hash(floor(a*24./6.28318)+id)))*38.); float fade=(1.-tt)*(1.-tt); col+=colr*ring*fade*(.8+spark)*3.2*smoothstep(.0,.05,tt); col+=colr*exp(-r*14.)*pow(1.-tt,3.)*.9; } }
  return col; }`),
   ...EXTRA_GENERATORS,
+  ...REAL_GENERATORS,
 ];
 
 export const genById = (id) => GENERATORS.find((g) => g.id === id);

@@ -10,9 +10,11 @@ import { loadFonts } from './textrender.js';
 // Scenes that stand in for the person's clips. Chosen per category so a preview looks like a real edit.
 const FILLERS = {
   Social: ['liquidpastel', 'dreambokeh', 'aurora', 'popart'],
-  Business: ['corpwaves', 'gradmesh', 'hexgrid', 'network'],
-  Lifestyle: ['goldenclouds', 'cafeglow', 'silk', 'beach'],
-  Cinematic: ['mountains', 'dustlight', 'lensflare', 'ocean'],
+  Business: ['skylineblue', 'corpwaves', 'candles', 'gradmesh'],
+  Finance: ['candles', 'skylinenight', 'moneyrain', 'liquidgold'],
+  Luxury: ['liquidgold', 'skylinegolden', 'smokewisp', 'skylineblue'],
+  Lifestyle: ['skylinegolden', 'cafeglow', 'cloudtime', 'beach'],
+  Cinematic: ['cloudtime', 'skylinenight', 'smokewisp', 'ocean'],
   Energy: ['energy', 'speedlines', 'lasers', 'fire'],
   Events: ['petals', 'balloons', 'fireworks', 'sparkles'],
 };
@@ -44,7 +46,7 @@ export function buildPreview(tpl, { values = {}, brand = null, useBrand = false,
   const R = RATIOS.find((r) => r.id === (ratio || tpl.ratio)) || RATIOS[0];
   const pal = useBrand && brand ? brandPalette(brand) : tpl.pal;
   const vals = templateValues(tpl, values);
-  const rot = [...new Set([tpl.gen, tpl.cover?.gen, ...(FILLERS[tpl.cat] || FILLERS.Social)].filter(Boolean))];
+  const rot = [...new Set([tpl.gen, tpl.cover?.gen, ...(tpl.fill || FILLERS[tpl.cat] || FILLERS.Social)].filter(Boolean))];
   let n = 0; const pickMap = new Map();
   const genFor = (sl, i) => { if (sl.gen) return sl.gen; if (sl.card) return tpl.gen; if (!pickMap.has(i)) pickMap.set(i, rot[n++ % rot.length]); return pickMap.get(i); };
   const lay = layoutTemplate(tpl, { R, pal, vals, brand, useBrand, genFor });

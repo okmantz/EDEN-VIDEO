@@ -5,7 +5,7 @@ import { loadBrand, isConfigured, logoFile } from './brand.js';
 import { STYLE_PRESETS, BG_MUSIC, applyOneClick, adaptiveThreshold } from './autoedit.js';
 import { transcribe, wordsFromSubtitles, MODELS, LANGUAGES } from './asr.js';
 import { cleanWords, parseGlossary, wordsToLines, alignEdited } from './transcript.js';
-import { fetchStockFile } from './stock.js';
+import { fetchStockFile, keysOf, hasStock } from './stock.js';
 import { MUSIC } from './synth.js';
 import { lookPicker } from './ui/looks.js';
 import { RATIOS } from './model.js';
@@ -95,7 +95,7 @@ export function oneClickDialog(app, file) {
       h('div.row2', fld('Music track', musicSel), segRow('Music level', [['subtle', 'Subtle'], ['balanced', 'Balanced'], ['present', 'Present']], 'musicLevel')),
       segRow('B-roll', [['off', 'Off'], ['low', 'Light'], ['medium', 'Balanced'], ['high', 'Lots']], 'broll'),
       h('div.tgs', toggle('Keyword cards on b-roll', 'cards'), toggle('Slow punch-in on emphasis', 'zoom'),
-        h('label.tg', sw(() => o.stock, (v) => { o.stock = v; }, 'Real stock footage'), h('span', h('b', 'Real stock footage'), h('small', brand.pexelsKey ? 'Uses your Pexels key' : 'Add a free Pexels key in Brand to enable')))),
+        h('label.tg', sw(() => o.stock, (v) => { o.stock = v; }, 'Real stock footage'), h('span', h('b', 'Real stock footage'), h('small', hasStock(brand) ? 'Uses your stock footage key' : 'Add a free Pexels or Pixabay key in Brand to enable')))),
       segRow('Color grade', [['none', 'None'], ['clean', 'Clean'], ['vivid', 'Vivid'], ['warm', 'Warm'], ['cinema', 'Cinema']], 'grade')),
     h('div.grp', h('h4', 'Brand and format'),
       h('div.tgs', h('label.tg', sw(() => o.applyBrand, (v) => { o.applyBrand = v; looks.redraw(); }, 'Apply brand'), h('span', h('b', isConfigured(brand) ? `Apply ${brand.name || 'my brand'}` : 'Apply my brand'), h('small', isConfigured(brand) ? 'Colors, handle and logo' : 'Set it up in the Brand tab'))),
@@ -162,8 +162,9 @@ export async function runOneClick(app, file, opts) {
     const useBrand = opts.applyBrand && isConfigured(brand);
     const logoMedia = brand?.logo && useBrand ? await app.lib.importFile(await logoFile(brand)).catch(() => null) : null;
     const portrait = (media.h || 1) >= (media.w || 1);
-    const stock = opts.stock && brand?.pexelsKey && opts.broll !== 'off'
-      ? async (spot) => { const f = await fetchStockFile(spot.query || spot.word, { key: brand.pexelsKey, portrait }); return f ? app.lib.importFile(f).catch(() => null) : null; } : null;
+    let spotN = 0;
+    const stock = opts.stock && hasStock(brand) && opts.broll !== 'off'
+      ? async (spot) => { const f = await fetchStockFile(spot.query || spot.word, { keys: keysOf(brand), portrait, pick: spotN++ }); return f ? app.lib.importFile(f).catch(() => null) : null; } : null;
     const stats = await applyOneClick({ store: st, bank: app.bank, lib: app.lib, logoMedia, stock },
       { ...opts, brand, applyBrand: useBrand, outro: !!opts.outro, cutPauses: opts.cutPauses && media.hasAudio }, words, (k) => mark(k));
     bar.style.width = '100%';

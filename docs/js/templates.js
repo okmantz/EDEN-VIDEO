@@ -13,12 +13,17 @@ import { addBrandOverlays, addEndCard } from './autoedit.js';
 import { FONTS } from './textrender.js';
 import { S, CARD, T, PAL } from './tpl-kit.js';
 import { MORE_TEMPLATES } from './templates-more.js';
+import { PRO_TEMPLATES } from './templates-pro.js';
+import { TEMPLATE_STOCK } from './stock-catalog.js';
 
-export const CATEGORIES = ['All', 'Social', 'Business', 'Lifestyle', 'Cinematic', 'Energy', 'Events'];
+export const CATEGORIES = ['All', 'Social', 'Business', 'Finance', 'Lifestyle', 'Luxury', 'Cinematic', 'Energy', 'Events'];
 
 /* ----- tiny constructors live in tpl-kit.js ----- */
 
 export const TEMPLATES = [
+  /* the polished, genre-specific edits come first (see templates-pro.js) */
+  ...PRO_TEMPLATES,
+
   /* ================================================================= SOCIAL */
   { id: 'quick-cuts', name: 'Quick Cuts', cat: 'Social', ratio: '9:16', blurb: 'Fast, beat-synced cuts with punchy flashes.', badge: 'Popular',
     pal: PAL('#FF3D71', '#0B0B12', '#FFD24A'), music: 'trap', musicVol: 0.6, look: 'vivid', sync: true, gen: 'energy',
@@ -157,6 +162,8 @@ export const TEMPLATES = [
 
 /* ================================================================= helpers */
 export const templateById = (id) => TEMPLATES.find((t) => t.id === id);
+/** Stock-footage searches that suit this template (used by "Fill with stock"), or null. */
+export const templateStockQueries = (tpl) => tpl.stockQ || TEMPLATE_STOCK[tpl.id] || null;
 const beat = (tpl) => { const m = MUSIC.find((x) => x.id === tpl.music); return m ? 60 / m.bpm : 0.5; };
 const slotDur = (tpl, sl) => (tpl.sync ? Math.max(beat(tpl), Math.round(sl.dur / beat(tpl)) * beat(tpl)) : sl.dur);
 /** Planned length in seconds, as shown on the card (a clip shorter than its slot shortens the video). */

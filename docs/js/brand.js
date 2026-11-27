@@ -4,7 +4,7 @@ import { h, downloadBlob } from './util.js';
 import { FONTS, loadFonts } from './textrender.js';
 import { icon } from './ui/icons.js';
 import { lookPicker } from './ui/looks.js';
-import { testKey } from './stock.js';
+import { testKey, testPixabayKey } from './stock.js';
 import { MUSIC } from './synth.js';
 import { RATIOS } from './model.js';
 
@@ -12,7 +12,7 @@ const KEY = 'eden.brand.v1';
 export const DEFAULT_BRAND = () => ({
   name: '', handle: '', cta: 'Follow for more', primary: '#6FF2C6', secondary: '#101418', accent: '#FFD24A', text: '#FFFFFF', font: 'Montserrat',
   logo: null, logoPos: 'top_right', logoSize: 'medium', showHandle: true, apply: true, theme: true,
-  outro: false, look: 'Viral Pop', music: 'auto', ratio: '9:16', pexelsKey: '',
+  outro: false, look: 'Viral Pop', music: 'auto', ratio: '9:16', pexelsKey: '', pixabayKey: '',
 });
 export const PALETTES = [
   { name: 'Mint', primary: '#6FF2C6', secondary: '#101418', accent: '#FFD24A', text: '#FFFFFF' },
@@ -155,13 +155,17 @@ export function brandEditor(app, b, { onChange = () => {} } = {}) {
   const musicSel = h('select.field', { 'aria-label': 'Default music', on: { change: (e) => { b.music = e.target.value; change(); } } },
     [['auto', 'Auto-pick'], ...GENTLE.map((id) => [id, MUSIC.find((m) => m.id === id)?.name || id]), ['none', 'No music']].map(([v, l]) => h('option', { value: v, selected: v === b.music }, l)));
 
-  /* ---- stock key */
-  const keyIn = h('input.field.mono', { type: 'password', value: b.pexelsKey || '', placeholder: 'Paste your Pexels API key', autocomplete: 'off', spellcheck: false, 'aria-label': 'Pexels API key', on: { input: (e) => { b.pexelsKey = e.target.value.trim(); saveBrand(b); keyMsg.textContent = ''; } } });
-  const keyMsg = h('small.fhelp', '');
-  const testBtn = h('button.btn.sm', { type: 'button', on: { click: async () => {
-    testBtn.disabled = true; keyMsg.className = 'fhelp'; keyMsg.textContent = 'Checking…';
-    const r = await testKey(b.pexelsKey); keyMsg.textContent = r.message; keyMsg.className = 'fhelp ' + (r.ok ? 'ok' : 'bad'); testBtn.disabled = false;
-  } } }, 'Test key');
+  /* ---- stock keys (Pexels and Pixabay) */
+  const keyField = (field, label, test) => {
+    const msg = h('small.fhelp', '');
+    const input = h('input.field.mono', { type: 'password', value: b[field] || '', placeholder: `Paste your ${label} API key`, autocomplete: 'off', spellcheck: false, 'aria-label': `${label} API key`, on: { input: (e) => { b[field] = e.target.value.trim(); saveBrand(b); msg.textContent = ''; } } });
+    const btn = h('button.btn.sm', { type: 'button', on: { click: async () => {
+      btn.disabled = true; msg.className = 'fhelp'; msg.textContent = 'Checking…';
+      const r = await test(b[field]); msg.textContent = r.message; msg.className = 'fhelp ' + (r.ok ? 'ok' : 'bad'); btn.disabled = false;
+    } } }, 'Test key');
+    return { input, msg, row: h('div.fld', h('span', label), h('div.keyrow', input, btn), msg) };
+  };
+  const pexKey = keyField('pexelsKey', 'Pexels', testKey), pixKey = keyField('pixabayKey', 'Pixabay', testPixabayKey);
 
   /* ---- backup */
   const restoreIn = h('input', { type: 'file', accept: 'application/json,.json', hidden: true, on: { change: async (e) => {
@@ -169,7 +173,7 @@ export function brandEditor(app, b, { onChange = () => {} } = {}) {
     try { const j = JSON.parse(await f.text()); if (typeof j !== 'object' || !j) throw new Error('bad'); Object.assign(b, DEFAULT_BRAND(), j); change(); redrawAll(); app.toast('Brand restored', 'ok'); }
     catch { app.toast('That file is not an EDEN brand backup', 'err'); }
   } } });
-  const redrawAll = () => { keyIn.value = b.pexelsKey || ''; drawColors(); markPal(); drawFonts(); drawLogo(); root.querySelectorAll('input.field').forEach((i) => { const k = i.getAttribute('data-k'); if (k) i.value = b[k]; }); app.refreshBrandView?.(); };
+  const redrawAll = () => { pexKey.input.value = b.pexelsKey || ''; pixKey.input.value = b.pixabayKey || ''; drawColors(); markPal(); drawFonts(); drawLogo(); root.querySelectorAll('input.field').forEach((i) => { const k = i.getAttribute('data-k'); if (k) i.value = b[k]; }); app.refreshBrandView?.(); };
 
   const root = h('div.bform',
     restoreIn,
@@ -186,11 +190,11 @@ export function brandEditor(app, b, { onChange = () => {} } = {}) {
       toggle('apply', 'Apply my brand automatically', 'Tints captions and cards with your colors and adds your handle and logo.'),
       toggle('outro', 'Add an end card', 'A short branded card at the end with your name and call to action.'),
       toggle('theme', 'Use my primary color in the app', 'Changes the accent color of buttons and highlights.')),
-    section('broll', 'Stock footage (optional)', 'Real clips for b-roll instead of animated scenes. Free with a Pexels key.',
-      h('div.keyrow', keyIn, testBtn), keyMsg,
-      h('p.fine', 'Get a free key at ', h('a', { href: 'https://www.pexels.com/api/', target: '_blank', rel: 'noopener' }, 'pexels.com/api'), '. The key stays in this browser and is only sent to Pexels. Without it, Edit for me uses animated scenes that need no internet.')),
+    section('broll', 'Stock footage (optional)', 'Real, photographic clips and photos for b-roll, templates and Edit for me. Free with a Pexels or Pixabay key.',
+      pexKey.row, pixKey.row,
+      h('p.fine', 'Get a free key at ', h('a', { href: 'https://www.pexels.com/api/', target: '_blank', rel: 'noopener' }, 'pexels.com/api'), ' or ', h('a', { href: 'https://pixabay.com/api/docs/', target: '_blank', rel: 'noopener' }, 'pixabay.com/api/docs'), '. Keys stay in this browser and are only sent to the site they belong to. You need just one. Without one, the animated scenes work with no internet.')),
     section('download', 'Back up', 'Your brand lives in this browser. Save a copy to keep it safe or move it to another device.',
-      h('div.row', h('button.btn.sm', { type: 'button', on: { click: () => downloadBlob(new Blob([JSON.stringify({ ...b, pexelsKey: '' }, null, 2)], { type: 'application/json' }), 'eden-brand.json') } }, icon('download', 15), 'Download backup'),
+      h('div.row', h('button.btn.sm', { type: 'button', on: { click: () => downloadBlob(new Blob([JSON.stringify({ ...b, pexelsKey: '', pixabayKey: '' }, null, 2)], { type: 'application/json' }), 'eden-brand.json') } }, icon('download', 15), 'Download backup'),
         h('button.btn.sm', { type: 'button', on: { click: () => restoreIn.click() } }, icon('upload', 15), 'Restore from file'),
         h('button.btn.sm.ghost.danger', { type: 'button', on: { click: () => app.modal({ title: 'Reset your brand?', lead: 'Name, colors, font and logo go back to the defaults.', actions: [{ label: 'Cancel', ghost: true }, { label: 'Reset', primary: true, danger: true, onClick: () => { Object.assign(b, DEFAULT_BRAND()); change(); redrawAll(); } }] }) } }, 'Reset'))));
 
