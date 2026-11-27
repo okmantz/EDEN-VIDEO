@@ -41,6 +41,13 @@ The web app opens on four tabs: **Home**, **Templates**, **Projects** and **Bran
 
 Tests for the planning logic and template catalog: `node tests/web/autoedit.test.mjs` and `node tests/web/templates.test.mjs`.
 
+### Real footage, realistic scenes and pro templates
+
+- **Real stock footage.** In *B-roll > Real footage* you can search and drop in free Pexels and Pixabay videos and photos (city skylines, money, nature, cars, food and more). Add a free key for either one in *Brand > Stock footage* (a minute to get). Keys stay in your browser. You can also set site-wide keys in `docs/js/config.js`, but anything put there is public.
+- **Realistic offline scenes.** *B-roll > Animated > Realistic* has photoreal-leaning procedural scenes that need no key or connection: night, golden and blue-hour skylines, money rain, liquid gold, candlestick charts, rain on glass, night highway, earth from orbit, time-lapse clouds and drifting smoke.
+- **Pro templates.** Fifteen restrained, genre-specific edits (Market Brief, Weekly Results, Money Mindset, Brand Film, Minimal Launch, Tech Review, Listing Reel, Lookbook, Car Reveal, Menu Spotlight, 24 Hours In..., Athlete Film, Track Teaser, Event Aftermovie, Nightlife Promo). Each slot has a **Stock** button, and **Fill with stock footage** fills every empty slot at once.
+- **Edit for me** now pulls matching real footage when a key is set, and understands finance wording.
+
 ### What's inside
 
 - **Multi-track timeline** with video, overlay, text, effect and audio tracks. Drag, trim, split, duplicate, snap, pinch-to-zoom, unlimited undo and redo, copy and paste, and ripple delete.
