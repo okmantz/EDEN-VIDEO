@@ -28,7 +28,7 @@ const SHAPE_COLORS = ['#ffd24a', '#7cf5c8', '#ff5d8f', '#5fd0ff', '#ffffff', '#9
 const toast = (m, k) => window.EDEN?.toast(m, k);
 
 export class Panels {
-  constructor(app) { this.app = app; this.state = { genre: 'all', audioTab: 'music', fxCat: 'All', trCat: 'All', flCat: 'All' }; }
+  constructor(app) { this.app = app; this.state = { genre: 'all', audioTab: 'music', fxCat: 'All', trCat: 'All', flCat: 'All', q: { broll: '', effects: '', transitions: '', filters: '' } }; }
 
   build(id) {
     const fn = this['p_' + id];
@@ -36,18 +36,43 @@ export class Panels {
   }
   titleOf(id) { return TOOLS.find((t) => t.id === id)?.name || ''; }
 
+
+  /** Search field that filters in place (the panel is not rebuilt, so the keyboard stays open). */
+  _search(key, placeholder, onChange) {
+    const input = h('input', { type: 'search', placeholder, value: this.state.q[key] || '', autocomplete: 'off', autocapitalize: 'off', spellcheck: false, 'aria-label': placeholder, enterkeyhint: 'search',
+      on: { input: () => { this.state.q[key] = input.value; clr.hidden = !input.value; onChange(); }, keydown: (e) => { if (e.key === 'Escape' && input.value) { e.stopPropagation(); input.value = ''; input.dispatchEvent(new Event('input')); } } } });
+    const clr = h('button.clr', { title: 'Clear search', hidden: !input.value, on: { click: () => { input.value = ''; input.dispatchEvent(new Event('input')); input.focus(); } } }, icon('close', 14));
+    return h('div.search', icon('search', 16), input, clr);
+  }
+  /** Shared layout for the effects / transitions / filters libraries: hint, search, category chips, grid. */
+  _library({ key, catKey, items, hint, cols = 'g3', card, pre }) {
+    const { state } = this;
+    const wrap = h('div'); const chips = h('div.chips'); const grid = h('div.grid.' + cols);
+    const cats = ['All', ...new Set(items.map((x) => x.cat))];
+    const draw = () => {
+      chips.replaceChildren(...cats.map((c) => h('button.chip' + (state[catKey] === c ? '.on' : ''), { on: { click: () => { state[catKey] = c; draw(); } } }, c)));
+      const q = (state.q[key] || '').trim().toLowerCase();
+      const list = items.filter((x) => (state[catKey] === 'All' || x.cat === state[catKey]) && (!q || x.name.toLowerCase().includes(q) || (x.cat || '').toLowerCase().includes(q)));
+      grid.replaceChildren(...list.map(card));
+      if (!list.length) grid.replaceChildren(h('div.noresult', { style: { gridColumn: '1/-1' } }, `No matches for “${state.q[key]}”`));
+    };
+    wrap.append(h('div.hint', hint), ...(pre ? [].concat(pre) : []), this._search(key, `Search ${items.length} ${key}`, draw), chips, grid);
+    draw();
+    return wrap;
+  }
+
   // ------------------------------------------------------------ media
   p_media() {
     const { app } = this; const p = app.store.project;
     const wrap = h('div');
     const pick = h('input', { type: 'file', accept: 'video/*,image/*,audio/*,.mp4,.mov,.m4v,.webm,.mp3,.wav,.m4a', multiple: true, hidden: true, on: { change: (e) => { app.importFiles([...e.target.files]); e.target.value = ''; } } });
-    const drop = h('div.drop', { on: { click: () => pick.click() } }, icon('upload', 26), h('b', 'Import videos, photos & audio'), h('span', 'Tap to browse · or drop files here'));
+    const drop = h('button.drop', { on: { click: () => pick.click() } }, h('div.up', icon('upload', 24)), h('b', 'Import videos, photos & audio'), h('span', app.isMobile ? 'Tap to choose files' : 'Click to browse, or drop files here'));
     drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
     drop.addEventListener('dragleave', () => drop.classList.remove('over'));
     drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('over'); app.importFiles([...e.dataTransfer.files]); });
     wrap.append(pick, drop, h('div.hint', 'Everything stays on your device. Nothing is uploaded.'));
     const items = Object.values(p.media).filter((m) => !m.builtin);
-    if (!items.length) { wrap.append(h('div.sub', 'Your media'), h('div.empty', 'Imported files appear here.')); return wrap; }
+    if (!items.length) { wrap.append(h('div.sub', 'Your media'), h('div.empty.tiny', 'Imported files appear here.')); return wrap; }
     wrap.append(h('div.sub', `Your media · ${items.length}`));
     const grid = h('div.grid.g3');
     for (const m of items) {
@@ -71,15 +96,17 @@ export class Panels {
     const list = h('div.grid.g3');
     const draw = () => {
       chips.replaceChildren(...[{ id: 'all', name: 'All' }, ...GENRES].map((g) => h('button.chip' + (state.genre === g.id ? '.on' : ''), { on: { click: () => { state.genre = g.id; draw(); } } }, g.name)));
+      const q = (state.q.broll || '').trim().toLowerCase();
+      const gens = GENERATORS.filter((g) => (state.genre === 'all' || g.genre === state.genre) && (!q || g.name.toLowerCase().includes(q)));
       list.replaceChildren();
-      const gens = GENERATORS.filter((g) => state.genre === 'all' || g.genre === state.genre);
       for (const g of gens) {
         const im = lazyThumb(h('div.im'), 'gen', g.id);
         list.append(h('button.card', { title: g.name, on: { click: () => { app.store.addGenerator(g, 5); toast(g.name + ' added', 'ok'); } } }, im, h('span.add', icon('plus', 15)), h('div.lb', g.name)));
       }
+      if (!gens.length) list.append(h('div.noresult', { style: { gridColumn: '1/-1' } }, `No matches for “${state.q.broll}”`));
     };
     draw();
-    wrap.append(h('div.hint', `${GENERATORS.length} animated backgrounds across ${GENRES.length} genres. Rendered live in any aspect ratio, royalty-free, and they loop.`), chips, list);
+    wrap.append(h('div.hint', `${GENERATORS.length} animated backgrounds across ${GENRES.length} genres. Rendered live in any aspect ratio, royalty-free, and they loop.`), this._search('broll', 'Search backgrounds', draw), chips, list);
     return wrap;
   }
 
@@ -149,58 +176,38 @@ export class Panels {
   }
 
   // ------------------------------------------------------------ effects
-  _catChips(list, key) {
-    const cats = ['All', ...new Set(list.map((x) => x.cat))];
-    return h('div.chips', cats.map((c) => h('button.chip' + (this.state[key] === c ? '.on' : ''), { on: { click: () => { this.state[key] = c; this.app.refreshPanel(); } } }, c)));
-  }
   p_effects() {
-    const { app, state } = this; const wrap = h('div');
+    const { app } = this;
     const c = app.store.selected;
-    wrap.append(h('div.hint', c && c.kind !== 'audio' && c.clip.kind !== 'fx' ? 'Tap an effect to apply it to the selected clip. Long-press or use + for a timeline effect layer.' : 'Select a clip to apply an effect to it, or add an effect layer that covers everything beneath it.'), this._catChips(EFFECTS, 'fxCat'));
-    const grid = h('div.grid.g3');
-    for (const e of EFFECTS.filter((x) => state.fxCat === 'All' || x.cat === state.fxCat)) {
-      const card = h('button.card', { title: e.name, on: { click: () => app.applyEffect(e.id, false) } }, lazyThumb(h('div.im'), 'effect', e.id), h('div.lb', e.name),
-        h('span.add', { title: 'Add as effect layer', on: { click: (ev) => { ev.stopPropagation(); app.applyEffect(e.id, true); } } }, icon('layers', 14)));
-      grid.append(card);
-    }
-    wrap.append(grid);
-    return wrap;
+    const on = c && c.clip.kind !== 'audio' && c.clip.kind !== 'fx';
+    return this._library({ key: 'effects', catKey: 'fxCat', items: EFFECTS,
+      hint: on ? 'Tap an effect to apply it to the selected clip, or use the layers icon for an effect layer on the timeline.' : 'Select a clip to apply an effect to it, or tap the layers icon to add an effect layer that covers everything beneath it.',
+      card: (e) => h('button.card', { title: e.name, on: { click: () => app.applyEffect(e.id, false) } }, lazyThumb(h('div.im'), 'effect', e.id), h('div.lb', e.name),
+        h('span.add', { title: 'Add as effect layer', on: { click: (ev) => { ev.stopPropagation(); app.applyEffect(e.id, true); } } }, icon('layers', 14))) });
   }
 
   // ------------------------------------------------------------ transitions
   p_transitions() {
-    const { app, state } = this; const wrap = h('div');
-    const tid = app.transTarget;
-    const target = tid ? app.store.selected : null;
+    const { app } = this;
     const sel = app.currentTransitionClip();
-    wrap.append(h('div.hint', sel ? `Transition into “${sel.name || sel.kind}”.` : 'Select a clip (not the first) to set the transition into it, or tap the + between two clips on the timeline.'));
+    const pre = [];
     if (sel) {
       const cur = sel.transIn?.type;
-      wrap.append(h('div.ctl.nokf', h('label', 'Duration'), this.app.slider({ min: 0.1, max: 2.5, step: 0.05, value: sel.transIn?.dur || 0.6, onInput: (v) => app.setTransition(sel.id, cur || 'fade', v) }), h('output', ((sel.transIn?.dur || 0.6)).toFixed(2) + 's')));
-      if (cur) wrap.append(h('button.btn.sm.danger', { style: { margin: '6px 0 4px' }, on: { click: () => app.setTransition(sel.id, null) } }, icon('trash', 15), 'Remove transition'));
+      pre.push(h('div.ctl.nokf', h('label', 'Duration'), app.slider({ min: 0.1, max: 2.5, step: 0.05, value: sel.transIn?.dur || 0.6, onInput: (v) => app.setTransition(sel.id, cur || 'fade', v) }), h('output', ((sel.transIn?.dur || 0.6)).toFixed(2) + 's')));
+      if (cur) pre.push(h('button.btn.sm.danger', { style: { margin: '2px 0 12px' }, on: { click: () => app.setTransition(sel.id, null) } }, icon('trash', 15), 'Remove transition'));
     }
-    wrap.append(this._catChips(TRANSITIONS, 'trCat'));
-    const grid = h('div.grid.g3');
-    for (const t of TRANSITIONS.filter((x) => state.trCat === 'All' || x.cat === state.trCat)) {
-      const on = sel?.transIn?.type === t.id;
-      grid.append(h('button.card' + (on ? '.on' : ''), { title: t.name, on: { click: () => app.setTransition(sel?.id, t.id, sel?.transIn?.dur || 0.6) } }, lazyThumb(h('div.im'), 'transition', t.id), h('div.lb', t.name)));
-    }
-    wrap.append(grid);
-    void target;
-    return wrap;
+    return this._library({ key: 'transitions', catKey: 'trCat', items: TRANSITIONS, pre,
+      hint: sel ? `Transition into “${sel.name || sel.kind}”.` : 'Select a clip (not the first) to set the transition into it, or tap the + between two clips on the timeline.',
+      card: (t) => h('button.card' + (sel?.transIn?.type === t.id ? '.on' : ''), { title: t.name, on: { click: () => app.setTransition(sel?.id, t.id, sel?.transIn?.dur || 0.6) } }, lazyThumb(h('div.im'), 'transition', t.id), h('div.lb', t.name)) });
   }
 
   // ------------------------------------------------------------ filters
   p_filters() {
-    const { app, state } = this; const wrap = h('div');
+    const { app } = this;
     const c = app.store.selected;
-    wrap.append(h('div.hint', c ? 'Tap a look to apply it to the selected clip.' : 'Select a clip to colour grade it.'), this._catChips(FILTERS, 'flCat'));
-    const grid = h('div.grid.g3');
-    for (const f of FILTERS.filter((x) => state.flCat === 'All' || x.cat === state.flCat)) {
-      grid.append(h('button.card' + (c?.clip.look?.id === f.id ? '.on' : ''), { on: { click: () => app.applyFilter(f.id) } }, lazyThumb(h('div.im'), 'filter', f.id), h('div.lb', f.name)));
-    }
-    wrap.append(grid);
-    return wrap;
+    return this._library({ key: 'filters', catKey: 'flCat', items: FILTERS,
+      hint: c ? 'Tap a look to apply it to the selected clip.' : 'Select a clip to colour grade it, or tap a look to apply it to every clip on the main track.',
+      card: (f) => h('button.card' + (c?.clip.look?.id === f.id ? '.on' : ''), { title: f.name, on: { click: () => app.applyFilter(f.id) } }, lazyThumb(h('div.im'), 'filter', f.id), h('div.lb', f.name)) });
   }
 
   // ------------------------------------------------------------ captions

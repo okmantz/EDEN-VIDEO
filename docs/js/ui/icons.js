@@ -60,6 +60,24 @@ const P = {
   fullscreen: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
   sparkle: '<path d="m12 3 1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/>',
   layers: '<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>',
+  back: '<path d="m15 6-6 6 6 6"/>',
+  help: '<circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.6 2.6 0 1 1 3.7 2.4c-.8.4-1.3 1-1.3 1.9"/><path d="M12 17h.01"/>',
+  keyboard: '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6.5 10h.01M10 10h.01M14 10h.01M17.5 10h.01M7.5 14h9"/>',
+  search: '<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/>',
+  pen: '<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>',
+  dots: '<circle cx="12" cy="5" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="19" r="1.5" fill="currentColor"/>',
+  download: '<path d="M12 4v12M7.5 11.5 12 16l4.5-4.5"/><path d="M5 19h14"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+  phone: '<rect x="6.5" y="2.5" width="11" height="19" rx="3"/><path d="M10.5 18.5h3"/>',
+  share: '<path d="M12 15V3M7.5 7.5 12 3l4.5 4.5"/><path d="M8 11H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-1"/>',
+  addbox: '<rect x="4" y="4" width="16" height="16" rx="3.5"/><path d="M12 8.5v7M8.5 12h7"/>',
+  skipend: '<path d="M18 5v14M5 5l10 7-10 7z"/>',
+  film: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7.5 4v16M16.5 4v16M3 9h4.5M3 15h4.5M16.5 9H21M16.5 15H21"/>',
+  shield: '<path d="M12 3 5 6v5.5c0 4.4 2.9 8 7 9.5 4.1-1.5 7-5.1 7-9.5V6z"/><path d="m9 12 2.2 2.2L15.5 10"/>',
+  cloudoff: '<path d="M3 3l18 18"/><path d="M8.5 6.2A6 6 0 0 1 18 10a4 4 0 0 1 1.7 7.6M6 18a4.5 4.5 0 0 1-.6-8.9"/>',
+  bolt: '<path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/>',
+  tap: '<path d="M9 11V5.5a1.5 1.5 0 0 1 3 0V11"/><path d="M12 10.5a1.5 1.5 0 0 1 3 0V12a1.5 1.5 0 0 1 3 0v3.5a5.5 5.5 0 0 1-5.5 5.5H12a5 5 0 0 1-4-2l-2.3-3.1a1.5 1.5 0 0 1 2.3-1.9L9 14"/>',
+  refresh: '<path d="M20 11a8 8 0 0 0-14.5-4.5L4 8"/><path d="M4 4v4h4M4 13a8 8 0 0 0 14.5 4.5L20 16"/><path d="M20 20v-4h-4"/>',
 };
 
 export function icon(name, size = 22, cls = '') {
@@ -73,3 +91,15 @@ export function icon(name, size = 22, cls = '') {
   return s;
 }
 export const hasIcon = (n) => n in P;
+
+/** The EDEN mark: an "E" whose middle arm is a play button. */
+export function logoMark(size = 34, rounded = true) {
+  const n = 'http://www.w3.org/2000/svg';
+  const s = document.createElementNS(n, 'svg');
+  s.setAttribute('viewBox', '0 0 512 512'); s.setAttribute('width', size); s.setAttribute('height', size); s.setAttribute('aria-hidden', 'true'); s.setAttribute('class', 'logo-mark');
+  const id = 'lg' + Math.random().toString(36).slice(2, 7);
+  s.innerHTML = `<defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#86f7d0"/><stop offset="1" stop-color="#5fd0ff"/></linearGradient></defs>`
+    + `<rect width="512" height="512" rx="${rounded ? 116 : 0}" fill="url(#${id})"/>`
+    + '<g fill="#05130e" stroke="#05130e" stroke-linejoin="round" stroke-linecap="round"><rect x="146" y="132" width="50" height="248" rx="25" stroke="none"/><rect x="146" y="132" width="224" height="50" rx="25" stroke="none"/><rect x="146" y="330" width="224" height="50" rx="25" stroke="none"/><path d="M234 208 L234 304 L326 256 Z" stroke-width="26"/></g>';
+  return s;
+}

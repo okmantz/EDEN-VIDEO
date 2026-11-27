@@ -42,7 +42,7 @@ export class Timeline {
     this.ruler = h('div.ruler');
     this.playhead = h('div.playhead');
     this.snapLine = h('div.snapline', { hidden: true });
-    this.empty = h('div.tl-empty', h('div', icon('plus', 22), h('div', 'Add a clip to start editing')));
+    this.empty = h('div.tl-empty', h('button', { on: { click: () => this.onAddClip?.() } }, icon('plus', 22), h('span', 'Add media to start editing')));
     this.inner.append(this.ruler, this.playhead, this.snapLine);
     this.scroll = h('div.tl-scroll', this.inner);
     root.append(this.bar, h('div.tl-body', this.heads, this.scroll));
@@ -117,6 +117,7 @@ export class Timeline {
     this.headsIn.replaceChildren(); this.headsIn.style.height = this.totalH + 'px';
     this._ruler(W);
     this.laneEls = new Map();
+    const count0 = p.tracks.reduce((a, t) => a + t.clips.length, 0);
     for (const L of this.layout) {
       const lane = h('div.lane', { style: { top: L.y + 'px', height: L.h + 'px' }, 'data-track': L.tr.id });
       this.laneEls.set(L.tr.id, lane);
@@ -128,6 +129,7 @@ export class Timeline {
       this.headsIn.append(head);
       for (const c of L.tr.clips) lane.append(this._clipEl(c, L));
       if (L.tr.kind === 'video') this._transMarks(L, lane);
+      if (L.tr.id === mainId && count0) { const endT = L.tr.clips.reduce((a, c) => Math.max(a, end(c)), 0); lane.append(h('button.addclip', { title: 'Add media', style: { left: this.t2x(endT) + 10 + 'px', top: '3px', bottom: '3px' }, on: { pointerdown: (e) => e.stopPropagation(), click: () => this.onAddClip?.() } }, icon('plus', 20))); }
     }
     const count = p.tracks.reduce((a, t) => a + t.clips.length, 0);
     if (!count) { this.empty.style.top = RULER + 'px'; this.inner.append(this.empty); } else this.empty.remove();

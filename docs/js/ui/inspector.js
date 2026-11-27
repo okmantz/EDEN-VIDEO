@@ -1,7 +1,7 @@
 // Clip inspector: transform / keyframes / speed / audio / look / adjust / effects / animation / mask / chroma / text.
 import { h, clamp, EASE, fmtDur } from '../util.js';
 import { icon } from './icons.js';
-import { evalKF, end } from '../model.js';
+import { evalKF, end, projectDuration } from '../model.js';
 import { FILTERS, EFFECTS, BLENDS, MASKS, ANIM_IN, ANIM_OUT, ANIM_LOOP, effectById, effectDefaults, filterById } from '../effects.js';
 import { FONTS, TEXT_PRESETS } from '../textrender.js';
 import { GENERATORS } from '../generators.js';
@@ -56,9 +56,17 @@ export class Inspector {
   }
 
   _none() {
-    return h('div', { style: { padding: '10px 2px' } }, h('div.empty', icon('wand', 24), h('div', { style: { marginTop: '8px', fontWeight: 700, color: 'var(--text)' } }, 'Nothing selected'), h('div', 'Tap a clip on the timeline to edit it.')),
+    const p = this.store.project;
+    const clips = p.tracks.reduce((a, t) => a + t.clips.length, 0);
+    const keys = [[['Space'], 'Play / pause'], [['S'], 'Split at playhead'], [['Del'], 'Delete'], [['Ctrl', 'Z'], 'Undo'], [['Ctrl', 'D'], 'Duplicate'], [['←', '→'], 'Step one frame'], [['+', '−'], 'Zoom timeline']];
+    return h('div', { style: { padding: '4px 0' } },
+      h('div.sub', 'Project'),
+      h('div.proj-summary',
+        h('div', h('b', p.canvas.ratio), h('span', `${p.canvas.w}×${p.canvas.h}`)), h('div', h('b', fmtDur(projectDuration(p))), h('span', 'Duration')),
+        h('div', h('b', clips), h('span', clips === 1 ? 'Clip' : 'Clips')), h('div', h('b', p.canvas.fps + ' fps'), h('span', 'Frame rate'))),
+      h('div.hint', 'Select a clip on the timeline to edit its transform, speed, audio, filter, effects and animation.'),
       h('div.sub.desktop-only', 'Shortcuts'),
-      h('div.hint.desktop-only', 'Space play · S split · Del delete · Ctrl+Z undo · Ctrl+D duplicate · ←/→ step frame · +/− zoom'));
+      h('div.keys.desktop-only', keys.map(([k, l]) => h('div', h('span', k.map((x) => h('span.kbd', x))), h('span', l)))));
   }
 
   _sectionsFor(c) {
