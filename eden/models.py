@@ -5,7 +5,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
-from .presets import PLATFORMS, STYLES
+from .brand import LOGO_POSITIONS, LOGO_SIZES
+from .presets import CAPTION_FONTS, CAPTION_PRESETS, PLATFORMS, STYLES
 
 
 class BrollAdd(BaseModel):
@@ -45,12 +46,28 @@ class RenderOptions(BaseModel):
     whoosh_sfx_id: Optional[str] = Field(default=None, max_length=32)
     pop_sfx_id: Optional[str] = Field(default=None, max_length=32)
     remix: Optional[RemixPlan] = None
+    # Caption look (None = the style's own). "brand" uses the brand kit's colours and font.
+    caption_preset: Optional[str] = Field(default=None, max_length=32)
+    caption_position: Optional[Literal["top", "center", "bottom"]] = None
+    caption_scale: float = Field(default=1.0, ge=0.6, le=1.6)
+    brand: Optional[bool] = None            # None = follow "Apply my brand" in the brand kit
+    remove_repeats: Optional[bool] = None   # None = follow remove_fillers
+    broll_cards: bool = True                # animated keyword cards when there is no footage
 
     @field_validator("style")
     @classmethod
     def _style(cls, v: str) -> str:
         if v not in STYLES:
             raise ValueError(f"Unknown style '{v}'")
+        return v
+
+    @field_validator("caption_preset")
+    @classmethod
+    def _caption_preset(cls, v: Optional[str]) -> Optional[str]:
+        if v in (None, "", "style"):
+            return None
+        if v != "brand" and v not in CAPTION_PRESETS:
+            raise ValueError(f"Unknown caption look '{v}'")
         return v
 
 
@@ -73,8 +90,19 @@ class RenderRequest(BaseModel):
 
 class SettingsUpdate(BaseModel):
     display_name: Optional[str] = Field(default=None, max_length=80)
-    brand_color: Optional[str] = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
-    use_brand_color: Optional[bool] = None
+    # Brand kit
+    brand_name: Optional[str] = Field(default=None, max_length=60)
+    brand_handle: Optional[str] = Field(default=None, max_length=40)
+    brand_color: Optional[str] = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")        # primary
+    brand_secondary: Optional[str] = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+    brand_text: Optional[str] = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+    brand_font: Optional[str] = Field(default=None, max_length=40)
+    logo_position: Optional[str] = Field(default=None, max_length=20)
+    logo_size: Optional[str] = Field(default=None, max_length=10)
+    show_handle: Optional[bool] = None
+    apply_brand: Optional[bool] = None
+    brand_theme: Optional[bool] = None       # tint the app itself with the brand colour
+    use_brand_color: Optional[bool] = None   # legacy, kept so older clients keep working
     default_style: Optional[str] = None
     default_platforms: Optional[list[str]] = None
     caption_font: Optional[str] = Field(default=None, max_length=60)
@@ -92,6 +120,27 @@ class SettingsUpdate(BaseModel):
     def _ds(cls, v: Optional[str]) -> Optional[str]:
         if v is not None and v not in STYLES:
             raise ValueError("Unknown style")
+        return v
+
+    @field_validator("brand_font")
+    @classmethod
+    def _bf(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in CAPTION_FONTS:
+            raise ValueError("Unknown font")
+        return v
+
+    @field_validator("logo_position")
+    @classmethod
+    def _lp(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in LOGO_POSITIONS:
+            raise ValueError("Unknown logo position")
+        return v
+
+    @field_validator("logo_size")
+    @classmethod
+    def _ls(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in LOGO_SIZES:
+            raise ValueError("Unknown logo size")
         return v
 
     @field_validator("default_platforms")

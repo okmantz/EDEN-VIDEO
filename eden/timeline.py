@@ -5,7 +5,7 @@ import bisect
 from dataclasses import dataclass
 from typing import Optional
 
-from .presets import FILLER_PHRASES, FILLER_SINGLE_EXTENDED, FILLER_WORDS
+from .presets import FILLER_PHRASES, FILLER_SINGLE_EXTENDED, FILLER_WORDS, STUTTER_WORDS
 from .transcript import Word
 
 Span = tuple[float, float]
@@ -108,6 +108,25 @@ def find_filler_cuts(words: list[Word], phrases: bool = False) -> list[tuple[Spa
             i += span_words
         else:
             i += 1
+    return cuts
+
+
+def find_repeat_cuts(words: list[Word], max_gap: float = 0.7) -> list[tuple[Span, str]]:
+    """Stumbles like "I I think" or "the the": cut the first copy, keep the second.
+
+    Only small function words are considered, and only when the repeat follows right away, so
+    deliberate repetition ("very, very good", "that that") is never touched."""
+    cuts: list[tuple[Span, str]] = []
+    for i in range(len(words) - 1):
+        a, b = words[i], words[i + 1]
+        if not a.norm or a.norm != b.norm or a.norm not in STUTTER_WORDS:
+            continue
+        if b.start - a.end > max_gap or a.text.rstrip().endswith((".", "!", "?", ";")):
+            continue
+        start = max(words[i - 1].end if i > 0 else 0.0, a.start - 0.01)
+        end = b.start - 0.04
+        if end - start >= 0.08:
+            cuts.append(((max(0.0, start), end), f"{a.norm} {a.norm}"))
     return cuts
 
 

@@ -17,11 +17,14 @@ from fastapi.staticfiles import StaticFiles
 from . import APP_NAME, TAGLINE, __version__
 from . import captions as cap_mod
 from . import timeline as tl
+from . import brand as brand_mod
+from . import musicgen, previews
 from .ai import Ollama
 from .config import Config, load_config
 from .db import Database, new_id, now
 from .jobs import JobManager
-from .media import MediaError, detect_silences, make_thumbnail, probe, run_ffmpeg
+from .media import (MediaError, detect_silences, estimate_threshold, make_thumbnail, probe, read_levels, run_ffmpeg,
+                    silences_from_levels)
 from .models import AudioPatch, BrollPatch, RemixPlan, RenderOptions, RenderRequest, SettingsUpdate, VideoPatch
 from .presets import PACING, PLATFORMS, STYLES, get_style, public_catalog
 from .services import Services
@@ -58,6 +61,7 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
         jobs.recover()
         for child in cfg.work_dir.iterdir():
             shutil.rmtree(child, ignore_errors=True)
+        musicgen.warm_up(cfg.cache_dir)          # render the built-in music loops in the background
         yield
         jobs.shutdown()
 
@@ -329,20 +333,36 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
         """How much dead air could each pacing level remove? Fast: audio only."""
         p = need("projects", pid, "Project")
         if not p["has_audio"]:
-            result = {"has_audio": False, "pacing": {}}
+            result: dict[str, Any] = {"has_audio": False, "pacing": {}}
         else:
             src = Path(p["path"])
             per: dict[str, Any] = {}
-            cache: dict[tuple[float, float], list] = {}
-            for key, cfg_p in PACING.items():
-                k = (cfg_p["noise_db"], cfg_p["min_silence"])
-                if k not in cache:
-                    cache[k] = detect_silences(cfg, src, cfg_p["noise_db"], cfg_p["min_silence"])
-                segs = tl.speech_segments(cache[k], p["duration"], cfg_p["keep"] / 2)
-                kept = sum(e - s for s, e in segs) or p["duration"]
-                per[key] = {"kept": round(kept, 1), "removed": round(p["duration"] - kept, 1),
-                            "pauses": len(cache[k])}
-            result = {"has_audio": True, "pacing": per}
+            audio: dict[str, Any] = {}
+            try:
+                levels = read_levels(cfg, src, duration=p["duration"])
+                thr = estimate_threshold(levels)
+                for key, cfg_p in PACING.items():
+                    spans = silences_from_levels(levels, thr["threshold"], cfg_p["min_silence"])
+                    segs = tl.speech_segments(spans, p["duration"], cfg_p["keep"] / 2)
+                    kept = sum(e - s for s, e in segs) or p["duration"]
+                    per[key] = {"kept": round(kept, 1), "removed": round(p["duration"] - kept, 1), "pauses": len(spans)}
+                gap = (thr["speech"] - thr["floor"]) if thr["floor"] is not None and thr["speech"] is not None else None
+                audio = {"threshold_db": thr["threshold"], "noise_floor_db": thr["floor"], "speech_db": thr["speech"],
+                         "adaptive": thr["adaptive"],
+                         "quality": None if gap is None else ("clean" if gap >= 35 else "good" if gap >= 22 else "noisy")}
+            except MediaError:
+                raise
+            except Exception:       # no numpy or unusual audio: use FFmpeg's detector at fixed levels
+                cache: dict[tuple[float, float], list] = {}
+                for key, cfg_p in PACING.items():
+                    k = (cfg_p["noise_db"], cfg_p["min_silence"])
+                    if k not in cache:
+                        cache[k] = detect_silences(cfg, src, cfg_p["noise_db"], cfg_p["min_silence"])
+                    segs = tl.speech_segments(cache[k], p["duration"], cfg_p["keep"] / 2)
+                    kept = sum(e - s for s, e in segs) or p["duration"]
+                    per[key] = {"kept": round(kept, 1), "removed": round(p["duration"] - kept, 1),
+                                "pauses": len(cache[k])}
+            result = {"has_audio": True, "pacing": per, "audio": audio}
         db.update("projects", pid, {"analysis_json": json.dumps(result)})
         return result
 
@@ -558,8 +578,35 @@ def create_app(cfg: Optional[Config] = None) -> FastAPI:
         def audio_file(aid: str) -> FileResponse:
             return FileResponse(need(kind, aid, label)["path"])
 
+    @app.get("/api/music/builtin", operation_id="list_builtin_music")
+    def list_builtin_music() -> list[dict]:
+        return [{**t, "builtin": True, "file_url": f"/api/music/builtin/{t['key']}/file"} for t in musicgen.catalog()]
+
+    @app.get("/api/music/builtin/{key}/file", operation_id="file_builtin_music")
+    def builtin_music_file(key: str) -> FileResponse:
+        if key not in musicgen.TRACKS:
+            raise HTTPException(404, "Track not found")
+        return FileResponse(musicgen.ensure_track(cfg.cache_dir, key), media_type="audio/wav")
+
     _audio_routes("music", "Track")
     _audio_routes("sfx", "Sound")
+
+    # ------------------------------------------------------------- previews
+    @app.get("/api/preview/caption.png", include_in_schema=False)
+    def caption_preview(preset: str = "viral_pop", position: Optional[str] = None, scale: float = 1.0,
+                        brand: Optional[bool] = None, text: str = "", show_brand: bool = False) -> FileResponse:
+        """A real render of one caption look, using the saved brand kit."""
+        if not ffmpeg_info(cfg.ffmpeg).libass:
+            raise HTTPException(404, "This FFmpeg build cannot draw captions.")
+        s = svc.settings()
+        apply_brand = bool(s.get("apply_brand", True)) if brand is None else brand
+        try:
+            path = previews.render_preview(cfg, s, preset=preset, position=position if position in ("top", "center", "bottom") else None,
+                                           scale=max(0.6, min(1.6, scale)), apply_brand=apply_brand, text=text,
+                                           show_brand=show_brand)
+        except KeyError as e:
+            raise HTTPException(404, str(e))
+        return FileResponse(path, media_type="image/png", headers={"Cache-Control": "no-cache"})
 
     # ------------------------------------------------------- fine-tune editor
     @app.get("/api/videos/{vid}/plan")

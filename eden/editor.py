@@ -139,6 +139,8 @@ class MusicMix:
     path: str
     volume: float = 0.35      # 0..1, applied before ducking
     duck: bool = True         # duck under speech (needs an audio track)
+    fade_in: float = 1.2      # seconds
+    fade_out: float = 2.2     # seconds
 
 
 @dataclass
@@ -161,6 +163,9 @@ class FinalPlan:
     fonts_dir: Optional[str] = None
     logo: Optional[Path] = None
     logo_top: float = 0.08
+    logo_bottom: float = 0.2
+    logo_pos: str = "top_right"      # top_left | top_right | bottom_left | bottom_right
+    logo_frac: float = 0.16          # logo width as a fraction of the frame width
     has_audio: bool = True
     music: Optional[MusicMix] = None
     sfx: list[SfxHit] = field(default_factory=list)
@@ -191,8 +196,11 @@ def build_final_graph(plan: FinalPlan) -> str:
         cur = "cap"
     if plan.logo is not None:
         li = len(plan.broll) + 1
-        lines.append(f"[{li}:v]scale={int(0.16 * W)}:-1,format=rgba,colorchannelmixer=aa=0.88[lg]")
-        lines.append(f"[{cur}][lg]overlay=W-w-{int(0.04 * W)}:{int(plan.logo_top * H)}[lgo]")
+        margin = int(0.04 * W)
+        x = str(margin) if plan.logo_pos.endswith("left") else f"W-w-{margin}"
+        y = str(int(plan.logo_top * H)) if plan.logo_pos.startswith("top") else f"H-h-{int(plan.logo_bottom * H)}"
+        lines.append(f"[{li}:v]scale={max(16, int(plan.logo_frac * W))}:-1,format=rgba,colorchannelmixer=aa=0.9[lg]")
+        lines.append(f"[{cur}][lg]overlay={x}:{y}[lgo]")
         cur = "lgo"
     lines.append(f"[{cur}]format=yuv420p[vout]")
     return ";\n".join(lines) + "\n"
@@ -219,11 +227,20 @@ def build_final_audio_graph(plan: FinalPlan, music_idx: Optional[int],
         mix.append("[spk]")
     if plan.music is not None:
         assert music_idx is not None
+        fin = max(0.0, min(plan.music.fade_in, plan.duration / 4))
+        fout = max(0.0, min(plan.music.fade_out, plan.duration / 3))
+        fades = ""
+        if fin > 0.05:
+            fades += f",afade=t=in:st=0:d={_f(fin)}"
+        if fout > 0.05:
+            fades += f",afade=t=out:st={_f(max(0.0, plan.duration - fout))}:d={_f(fout)}"
         lines.append(f"[{music_idx}:a]aresample=48000,aformat=channel_layouts=stereo,"
-                     f"volume={_f(plan.music.volume)}[mus]")
+                     f"volume={_f(plan.music.volume)}{fades}[mus]")
         if plan.has_audio and plan.music.duck:
-            lines.append("[mus][key]sidechaincompress=threshold=-21dB:ratio=5:"
-                         "attack=15:release=450[musd]")
+            # The voice is the sidechain: whenever it speaks the music dips about 6-8 dB, then eases
+            # back up during pauses.
+            lines.append("[mus][key]sidechaincompress=threshold=0.08:ratio=6:"
+                         "attack=20:release=650[musd]")
         else:
             lines.append("[mus]anull[musd]")
         mix.append("[musd]")

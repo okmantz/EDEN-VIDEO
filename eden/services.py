@@ -20,7 +20,17 @@ class Services:
 def effective_settings(cfg: Config, db: Database) -> dict[str, Any]:
     base: dict[str, Any] = {
         "display_name": "",
+        "brand_name": "",
+        "brand_handle": "",
         "brand_color": "#2EE6A6",
+        "brand_secondary": "#101418",
+        "brand_text": "#FFFFFF",
+        "brand_font": "montserrat_extrabold",
+        "logo_position": "top_right",
+        "logo_size": "medium",
+        "show_handle": False,
+        "apply_brand": True,
+        "brand_theme": True,
         "use_brand_color": False,
         "default_style": "viral_pop",
         "default_platforms": ["instagram_reels", "tiktok", "youtube_shorts"],

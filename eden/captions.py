@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable, Optional
 
 from .keywords import stem
+from .presets import caption_family
 from .transcript import Word
 
 
@@ -110,12 +111,14 @@ def _wrap(tokens: list[str], max_chars: int) -> list[list[str]]:
 def build_ass(chunks: list[Chunk], style: dict[str, Any], width: int, height: int,
               safe_bottom: float = 0.2, safe_top: float = 0.08,
               emphasis: Optional[Iterable[str]] = None, font_override: str = "",
-              brand_color: str = "") -> str:
+              brand_color: str = "", watermark: Optional[dict[str, Any]] = None,
+              total: float = 0.0) -> str:
     """Render chunks to an ASS document sized to the output frame.
 
-    Word-highlight styles emit one event per spoken word so the active word can
-    be coloured; other styles emit one event per chunk."""
-    font = font_override or style.get("font", "Inter")
+    Word-highlight styles emit one event per spoken word so the active word can be coloured; other
+    styles emit one event per chunk. A ``watermark`` ({"text", "align" 7|9|1|3, "color"}) adds a
+    small handle that stays on screen for the whole video (``total`` seconds)."""
+    family, bundled = caption_family(font_override or style.get("font", ""))
     size = max(18, int(round(style["size"] * height)))
     # outline widths are authored for a 1080 px wide frame
     scale = width / 1080
@@ -126,7 +129,8 @@ def build_ass(chunks: list[Chunk], style: dict[str, Any], width: int, height: in
     highlight = ass_color(highlight_hex)
     box = bool(style.get("box"))
     border_style = 3 if box else 1
-    back = ass_color(style.get("box_color", "#000000"), alpha=0x40) if box else ass_color("#000000", alpha=0x80)
+    box_alpha = int(style.get("box_alpha", 0x40))
+    back = ass_color(style.get("box_color", "#000000"), alpha=box_alpha) if box else ass_color("#000000", alpha=0x80)
     outline_col = ass_color(style.get("outline_color", "#000000")) if not box else back
     position = style.get("position", "bottom")
     if position == "center":
@@ -136,8 +140,23 @@ def build_ass(chunks: list[Chunk], style: dict[str, Any], width: int, height: in
     else:
         alignment, margin_v = 2, int(safe_bottom * height)
     margin_lr = int(0.07 * width)
-    bold = -1 if style.get("bold", True) else 0
+    bold = 0 if bundled else (-1 if style.get("bold", True) else 0)
+    spacing = float(style.get("spacing", 0)) * scale
     emph = {stem(e) for e in (emphasis or [])}
+    glow = style.get("glow")
+    anim = style.get("anim") or ("pop" if style.get("pop") else "none")
+
+    styles = (
+        f"Style: Eden,{family},{size},{primary},{primary},{outline_col},{back},{bold},0,0,0,100,100,{spacing:.1f},0,"
+        f"{border_style},{(max(outline, 6 * scale) if box else outline):.1f},{shadow:.1f},{alignment},"
+        f"{margin_lr},{margin_lr},{margin_v},1\n")
+    if watermark and watermark.get("text"):
+        wfam, _ = caption_family("inter_semibold")
+        wsize = max(16, int(round(0.021 * height)))
+        wmargin_v = int((safe_top + 0.018) * height)
+        styles += (f"Style: EdenMark,{wfam},{wsize},{ass_color(watermark.get('color', '#FFFFFF'), 0x33)},"
+                   f"&H000000FF,&H66000000,&H80000000,0,0,0,0,100,100,0.5,0,1,{2 * scale:.1f},{1 * scale:.1f},7,"
+                   f"{int(0.05 * width)},{int(0.05 * width)},{wmargin_v},1\n")
 
     header = (
         "[Script Info]\nScriptType: v4.00+\n"
@@ -146,20 +165,45 @@ def build_ass(chunks: list[Chunk], style: dict[str, Any], width: int, height: in
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, "
         "Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
         "Alignment, MarginL, MarginR, MarginV, Encoding\n"
-        f"Style: Eden,{font},{size},{primary},{primary},{outline_col},{back},{bold},0,0,0,100,100,0,0,"
-        f"{border_style},{(max(outline, 6 * scale) if box else outline):.1f},{shadow:.1f},{alignment},{margin_lr},{margin_lr},{margin_v},1\n\n"
+        f"{styles}\n"
         "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
 
     upper = bool(style.get("uppercase"))
     max_chars = int(style.get("max_chars_line", 28))
-    pop = bool(style.get("pop"))
     word_hl = bool(style.get("word_highlight"))
     events: list[str] = []
 
     def disp(w: Word) -> str:
         t = _escape(w.text)
         return t.upper() if upper else t
+
+    # Final on-screen anchor, used by the slide-in animation.
+    anchor_x = width // 2
+    anchor_y = {5: height // 2, 8: margin_v}.get(alignment, height - margin_v)
+
+    def entrance(first: bool, last: bool) -> str:
+        """Override tags for the line's first/last event (arrival and exit animation)."""
+        tags = ""
+        if first:
+            if anim == "pop":
+                tags += r"\fscx90\fscy90\t(0,120,\fscx100\fscy100)"
+            elif anim == "slide":
+                tags += f"\\move({anchor_x},{anchor_y + int(0.022 * height)},{anchor_x},{anchor_y},0,170)\\fad(120,0)"
+        if anim in ("fade", "slide") or (anim == "pop" and last):
+            fin = 140 if (first and anim == "fade") else 0
+            fout = 110 if last and anim in ("fade",) else 0
+            if anim == "fade" and (fin or fout):
+                tags += f"\\fad({fin},{fout})"
+        return "{" + tags + "}" if tags else ""
+
+    def emit(start: float, end: float, body: str, first: bool, last: bool) -> None:
+        tags = entrance(first, last)
+        if glow:
+            gb = max(4.0, 0.006 * height)
+            events.append(f"Dialogue: 0,{_ts(start)},{_ts(end)},Eden,,0,0,0,,"
+                          f"{{\\bord{gb:.1f}\\3c{ass_color(glow)}\\1a&HFF&\\blur{gb * 1.4:.1f}\\shad0}}{body}")
+        events.append(f"Dialogue: 1,{_ts(start)},{_ts(end)},Eden,,0,0,0,,{tags}{body}")
 
     for ci, ch in enumerate(chunks):
         next_start = chunks[ci + 1].start if ci + 1 < len(chunks) else ch.end + 1.0
@@ -172,8 +216,7 @@ def build_ass(chunks: list[Chunk], style: dict[str, Any], width: int, height: in
 
         if not word_hl:
             body = r"\N".join(" ".join(line) for line in line_split)
-            anim = r"{\fscx92\fscy92\t(0,110,\fscx100\fscy100)}" if pop else ""
-            events.append(f"Dialogue: 0,{_ts(ch.start)},{_ts(chunk_end)},Eden,,0,0,0,,{anim}{body}")
+            emit(ch.start, chunk_end, body, True, True)
             continue
 
         for wi, w in enumerate(ch.words):
@@ -189,14 +232,16 @@ def build_ass(chunks: list[Chunk], style: dict[str, Any], width: int, height: in
                     parts.append(" ")
                 is_active = k == wi
                 is_emph = stem(ch.words[k].text) in emph
-                if is_active:
-                    parts.append(f"{{\\c{highlight}}}{tok}{{\\c{primary}}}")
-                elif is_emph:
+                if is_active or is_emph:
                     parts.append(f"{{\\c{highlight}}}{tok}{{\\c{primary}}}")
                 else:
                     parts.append(tok)
-            anim = r"{\fscx90\fscy90\t(0,120,\fscx100\fscy100)}" if (pop and wi == 0) else ""
-            events.append(f"Dialogue: 0,{_ts(start)},{_ts(end)},Eden,,0,0,0,,{anim}{''.join(parts)}")
+            emit(start, end, "".join(parts), wi == 0, wi + 1 == len(ch.words))
+
+    if watermark and watermark.get("text") and total > 0:
+        an = int(watermark.get("align", 7))
+        mark = _escape(str(watermark["text"]))
+        events.append(f"Dialogue: 2,{_ts(0)},{_ts(total)},EdenMark,,0,0,0,,{{\\an{an}\\fad(700,0)}}{mark}")
     return header + "\n".join(events) + "\n"
 
 

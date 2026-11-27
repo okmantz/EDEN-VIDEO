@@ -204,3 +204,113 @@ def extract_audio_wav(cfg: Config, src: Path, dst: Path, handle: Optional[ProcHa
 def make_thumbnail(cfg: Config, src: Path, dst: Path, at: float, width: int = 360) -> None:
     run_ffmpeg(cfg, ["-ss", f"{max(at, 0):.3f}", "-i", str(src), "-frames:v", "1",
                      "-vf", f"scale={width}:-2", "-q:v", "4", str(dst)])
+
+
+# --------------------------------------------------------------------------- #
+# Adaptive pause detection
+# --------------------------------------------------------------------------- #
+LEVEL_WINDOW = 0.02          # seconds per loudness reading
+_FLOOR_DB = -90.0
+
+
+def read_levels(cfg: Config, path: Path, handle: Optional[ProcHandle] = None,
+                on_progress: Optional[Callable[[float], None]] = None,
+                duration: float = 0.0) -> list[float]:
+    """Loudness (RMS, dBFS) of the first audio track in 20 ms steps.
+
+    Reads a 16 kHz mono copy of the audio straight from FFmpeg's pipe, a chunk at a time, so even
+    hours-long recordings use almost no memory."""
+    import numpy as np
+
+    sr = 16000
+    win = int(sr * LEVEL_WINDOW)
+    cmd = [cfg.ffmpeg, "-hide_banner", "-nostdin", "-loglevel", "error", "-vn", "-i", str(path),
+           "-map", "0:a:0", "-ac", "1", "-ar", str(sr), "-f", "s16le", "-"]
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except FileNotFoundError as e:
+        raise MediaError("FFmpeg was not found. Install FFmpeg and make sure it is on your PATH.") from e
+    if handle:
+        handle.proc = proc
+    levels: list[float] = []
+    carry = b""
+    chunk_bytes = win * 2 * 400            # 8 s of audio per read
+    assert proc.stdout is not None
+    try:
+        while True:
+            if handle and handle.cancel.is_set():
+                proc.terminate()
+                raise Cancelled()
+            data = proc.stdout.read(chunk_bytes)
+            if not data:
+                break
+            data = carry + data
+            usable = (len(data) // (win * 2)) * win * 2
+            carry = data[usable:]
+            if not usable:
+                continue
+            x = np.frombuffer(data[:usable], dtype="<i2").astype(np.float32) / 32768.0
+            rms = np.sqrt(np.mean(x.reshape(-1, win) ** 2, axis=1))
+            levels.extend(np.maximum(20.0 * np.log10(rms + 1e-9), _FLOOR_DB).tolist())
+            if on_progress and duration:
+                on_progress(min(1.0, len(levels) * LEVEL_WINDOW / duration))
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait()
+    if proc.returncode not in (0, None) and not levels:
+        raise MediaError("Could not read the audio to find pauses.")
+    return levels
+
+
+def estimate_threshold(levels: list[float], fallback: float = -32.0) -> dict:
+    """Pick a silence threshold that fits *this* recording.
+
+    A fixed threshold fails on both ends: it chops quiet speakers and misses pauses on noisy tracks.
+    Instead the noise floor (quietest 10%) and the speech level (loudest 10%) are measured, and the
+    threshold sits a little above the floor."""
+    live = sorted(v for v in levels if v > _FLOOR_DB + 1)
+    if len(live) < 100:
+        return {"threshold": fallback, "floor": None, "speech": None, "adaptive": False}
+    floor = live[int(len(live) * 0.10)]
+    speech = live[int(len(live) * 0.92)]
+    if speech - floor < 10.0:      # no clear difference between talking and not talking
+        return {"threshold": fallback, "floor": round(floor, 1), "speech": round(speech, 1), "adaptive": False}
+    thr = floor + 0.33 * (speech - floor)
+    thr = max(-52.0, min(-26.0, thr))
+    return {"threshold": round(thr, 1), "floor": round(floor, 1), "speech": round(speech, 1), "adaptive": True}
+
+
+def silences_from_levels(levels: list[float], threshold: float, min_silence: float,
+                         min_voiced: float = 0.07) -> list[tuple[float, float]]:
+    """Spans where the audio stays below ``threshold`` for at least ``min_silence`` seconds."""
+    w = LEVEL_WINDOW
+    n = len(levels)
+    voiced = [lv > threshold for lv in levels]
+    # drop clicks and bumps too short to be speech
+    need = max(1, int(round(min_voiced / w)))
+    i = 0
+    while i < n:
+        if voiced[i]:
+            j = i
+            while j < n and voiced[j]:
+                j += 1
+            if j - i < need:
+                for k in range(i, j):
+                    voiced[k] = False
+            i = j
+        else:
+            i += 1
+    spans: list[tuple[float, float]] = []
+    i = 0
+    while i < n:
+        if not voiced[i]:
+            j = i
+            while j < n and not voiced[j]:
+                j += 1
+            if (j - i) * w >= min_silence:
+                spans.append((round(i * w, 3), round(j * w, 3)))
+            i = j
+        else:
+            i += 1
+    return spans

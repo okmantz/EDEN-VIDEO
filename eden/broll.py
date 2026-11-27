@@ -24,6 +24,7 @@ from .keywords import stem
 from .presets import BROLL_DENSITY
 from .transcript import Word
 
+CARDS_PER_MINUTE = {"low": 2.0, "medium": 4.0, "high": 6.0}
 HOOK_GUARD = 2.0       # seconds at the start with no cutaway
 TAIL_GUARD = 1.5       # seconds at the end with no cutaway
 MIN_SPACING = 1.8      # minimum talking-head time between two cutaways
@@ -36,6 +37,7 @@ class Clip:
     duration: float
     tags: list[str] = field(default_factory=list)
     name: str = ""
+    kind: str = "footage"      # "footage" (a real clip) or "card" (an animated keyword card)
 
 
 @dataclass
@@ -61,6 +63,9 @@ def plan_broll(words: list[Word], total: float, clips: list[Clip], density: str,
     usable = [c for c in clips if c.duration >= MIN_CLIP]
     if cfg["max_gap"] <= 0 or not usable or total < HOOK_GUARD + TAIL_GUARD + MIN_CLIP + 1:
         return []
+    footage = [c for c in usable if c.kind != "card"]
+    # Keyword cards only ever appear on their word, and never more often than the density allows.
+    card_budget = max(1, int(round(CARDS_PER_MINUTE.get(density, 3) * total / 60.0)))
     rng = random.Random(seed)
     length = cfg["length"]
     last_ok = total - TAIL_GUARD
@@ -96,24 +101,33 @@ def plan_broll(words: list[Word], total: float, clips: list[Clip], density: str,
     for w in words:
         s = stem(w.text)
         if s in tag_index and len(s) >= 3:
-            clip = min(tag_index[s], key=lambda c: use_count[c.path])
+            pool = tag_index[s]
+            if card_budget <= 0:
+                pool = [c for c in pool if c.kind != "card"]
+            if not pool:
+                continue
+            clip = min(pool, key=lambda c: (c.kind == "card", use_count[c.path]))
+            if clip.kind == "card" and use_count[clip.path] >= 2:
+                continue
             p = make(clip, w.start - 0.1, f"keyword: {w.text.strip('.,!?').lower()}")
             if p and free(p, placed):
                 placed.append(p)
                 use_count[clip.path] += 1
+                if clip.kind == "card":
+                    card_budget -= 1
     placed.sort(key=lambda p: p.start)
 
     # 2) fill long stretches
     gap = cfg["max_gap"]
     cursor = HOOK_GUARD
     guard = 0
-    while cursor + gap < last_ok and guard < 500:
+    while footage and cursor + gap < last_ok and guard < 500:
         guard += 1
         nxt = next((p for p in placed if p.end > cursor and p.start <= cursor + gap), None)
         if nxt:
             cursor = nxt.end
             continue
-        clip = min(usable, key=lambda c: (use_count[c.path], rng.random()))
+        clip = min(footage, key=lambda c: (use_count[c.path], rng.random()))
         p = make(clip, cursor + gap * 0.65, "fill")
         if p and free(p, placed):
             placed.append(p)
@@ -128,20 +142,36 @@ def plan_broll(words: list[Word], total: float, clips: list[Clip], density: str,
 # --------------------------------------------------------------------------- #
 # Optional: Pexels stock footage (needs a free API key and internet access)
 # --------------------------------------------------------------------------- #
-def fetch_pexels(query: str, api_key: str, cache_dir: Path, portrait: bool,
-                 max_bytes: int = 60 * 1024 * 1024, timeout: float = 20.0) -> Optional[Clip]:
-    """Download one short stock clip for ``query``. Returns None on any failure."""
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    params = urllib.parse.urlencode({"query": query, "per_page": 6,
-                                     "orientation": "portrait" if portrait else "landscape", "size": "medium"})
-    req = urllib.request.Request(f"https://api.pexels.com/videos/search?{params}",
+def _pexels_search(query: str, api_key: str, orientation: Optional[str], timeout: float) -> list[dict]:
+    q = {"query": query, "per_page": 10, "size": "medium"}
+    if orientation:
+        q["orientation"] = orientation
+    req = urllib.request.Request(f"https://api.pexels.com/videos/search?{urllib.parse.urlencode(q)}",
                                  headers={"Authorization": api_key, "User-Agent": "EdenVideo/1.0"})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
-            data = json.loads(r.read().decode("utf-8"))
+            return list(json.loads(r.read().decode("utf-8")).get("videos", []))
     except (urllib.error.URLError, TimeoutError, ValueError, OSError):
-        return None
-    for vid in data.get("videos", []):
+        return []
+
+
+def fetch_pexels(query: str, api_key: str, cache_dir: Path, portrait: bool,
+                 max_bytes: int = 60 * 1024 * 1024, timeout: float = 20.0,
+                 used_ids: Optional[set] = None) -> Optional[Clip]:
+    """Download one short stock clip for ``query``. Returns None on any failure.
+
+    Prefers the right orientation but falls back to any, skips clips already used for another
+    word (``used_ids``) and favours clips of a useful length."""
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    videos = _pexels_search(query, api_key, "portrait" if portrait else "landscape", timeout)
+    if len(videos) < 3:
+        seen = {v.get("id") for v in videos}
+        videos += [v for v in _pexels_search(query, api_key, None, timeout) if v.get("id") not in seen]
+    used = used_ids if used_ids is not None else set()
+    videos.sort(key=lambda v: abs(float(v.get("duration") or 0) - 12.0))
+    for vid in videos:
+        if vid.get("id") in used:
+            continue
         dur = float(vid.get("duration") or 0)
         if dur < 3 or dur > 40:
             continue
@@ -164,5 +194,6 @@ def fetch_pexels(query: str, api_key: str, cache_dir: Path, portrait: bool,
             except (urllib.error.URLError, TimeoutError, OSError):
                 dest.unlink(missing_ok=True)
                 continue
+        used.add(vid.get("id"))
         return Clip(path=str(dest), duration=dur, tags=[query.lower()], name=f"Pexels: {query}")
     return None

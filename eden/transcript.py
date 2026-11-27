@@ -110,7 +110,7 @@ def load_wav_samples(wav: Path):
 
 def transcribe_whisper(wav: Path, model_size: str, device: str, language: Optional[str],
                        duration: float, on_progress: Optional[Callable[[float], None]] = None,
-                       handle: Optional[ProcHandle] = None) -> tuple[list[Word], str]:
+                       handle: Optional[ProcHandle] = None, hint: str = "") -> tuple[list[Word], str]:
     if not whisper_available():
         raise RuntimeError("The speech engine (faster-whisper) is not installed.")
     from faster_whisper import WhisperModel  # type: ignore
@@ -123,7 +123,8 @@ def transcribe_whisper(wav: Path, model_size: str, device: str, language: Option
     segments, info = model.transcribe(  # type: ignore[attr-defined]
         load_wav_samples(wav), language=None if not language or language == "auto" else language,
         word_timestamps=True, vad_filter=False, condition_on_previous_text=False,
-        initial_prompt=DISFLUENCY_PROMPT,
+        initial_prompt=DISFLUENCY_PROMPT + (f" {hint.strip()[:60]}." if hint and hint.strip() else ""),
+        beam_size=5,
     )
     words: list[Word] = []
     for seg in segments:

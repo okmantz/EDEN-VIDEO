@@ -7,14 +7,16 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from . import ai, editor, media
+from . import ai, cards, editor, media, musicgen
+from . import brand as brand_mod
 from . import broll as broll_mod
 from . import captions as cap_mod
 from . import keywords as kw_mod
 from . import timeline as tl
 from .db import now
+from .fonts import stage_fonts
 from .models import RenderOptions
-from .presets import FILLER_WORDS, PACING, get_platform, get_style
+from .presets import CAPTION_PRESETS, FILLER_WORDS, PACING, get_platform, get_style
 from .services import Services
 from .system import ffmpeg_info
 from .transcript import Word, load_words, model_cached, save_words, transcribe_whisper, whisper_available
@@ -74,7 +76,8 @@ def get_transcript(svc: Services, project: dict, opts: RenderOptions, settings: 
         rep.set("Transcribing speech", 12, "Getting the speech model ready (first time only, this can take a few minutes)")
     try:
         words, detected = transcribe_whisper(wav, model_size, cfg.whisper_device, lang,
-                                             project["duration"], rep.span("Transcribing speech", 12, 46), handle)
+                                             project["duration"], rep.span("Transcribing speech", 12, 46), handle,
+                                             hint=str(settings.get("brand_name") or ""))
     except media.Cancelled:
         raise
     except Exception as e:  # model download failures, unsupported device, etc.
@@ -125,14 +128,27 @@ def run_pipeline(svc: Services, video_id: str, handle: media.ProcHandle) -> None
         silences: list[tuple[float, float]] = []
         if opts.remove_silence and info.has_audio and auto_cut:
             rep.set("Finding silences", 4)
-            silences = media.detect_silences(cfg, src, pacing["noise_db"], pacing["min_silence"], handle)
+            try:
+                # Measure this recording's own noise floor and speech level, then place the pause
+                # threshold between them (a fixed threshold chops quiet speakers and misses noisy pauses).
+                levels = media.read_levels(cfg, src, handle, rep.span("Finding silences", 4, 11), duration)
+                thr = media.estimate_threshold(levels, pacing["noise_db"])
+                silences = media.silences_from_levels(levels, thr["threshold"], pacing["min_silence"])
+                stats["pause_threshold_db"] = thr["threshold"]
+                stats["noise_floor_db"] = thr["floor"]
+                stats["adaptive_pauses"] = thr["adaptive"]
+            except media.Cancelled:
+                raise
+            except Exception:  # no numpy / undecodable audio: fall back to FFmpeg's own detector
+                silences = media.detect_silences(cfg, src, pacing["noise_db"], pacing["min_silence"], handle)
         elif opts.remove_silence and not info.has_audio:
             warnings.append("This video has no audio track, so there were no pauses to remove.")
 
         # ---- 3. transcript ---------------------------------------------- #
         words: list[Word] = []
         source = "none"
-        need_words = (opts.captions or opts.remove_fillers or opts.use_ai) and info.has_audio
+        repeats_on = opts.remove_fillers if opts.remove_repeats is None else opts.remove_repeats
+        need_words = (opts.captions or opts.remove_fillers or repeats_on or opts.use_ai) and info.has_audio
         if need_words:
             rep.set("Transcribing speech", 12)
             words, source, warn = get_transcript(svc, project, opts, settings, rep, handle, work)
@@ -157,20 +173,26 @@ def run_pipeline(svc: Services, video_id: str, handle: media.ProcHandle) -> None
             segs = [(0.0, duration)]
         after_silence = sum(e - s for s, e in segs)
         filler_cuts: list[tuple[tuple[float, float], str]] = []
-        if opts.remove_fillers and words and auto_cut:
-            filler_cuts = tl.find_filler_cuts(words, phrases=opts.remove_filler_phrases)
-            segs = tl.subtract(segs, [c for c, _ in filler_cuts])
+        repeat_cuts: list[tuple[tuple[float, float], str]] = []
+        if words and auto_cut and (opts.remove_fillers or repeats_on):
+            if opts.remove_fillers:
+                filler_cuts = tl.find_filler_cuts(words, phrases=opts.remove_filler_phrases)
+            if repeats_on:
+                repeat_cuts = tl.find_repeat_cuts(words)
+            segs = tl.subtract(segs, [c for c, _ in filler_cuts + repeat_cuts])
         segs = tl.snap(segs, fps, duration)
         if sum(e - s for s, e in segs) < 1.0:
             warnings.append("The automatic cuts would have left almost nothing, so the full video was kept.")
             segs = tl.snap([(0.0, duration)], fps, duration)
             filler_cuts = []
+            repeat_cuts = []
         timeline = tl.Timeline(segs)
         out_total = timeline.total
         stats.update({
             "final_duration": round(out_total, 2),
             "silence_removed": round(duration - after_silence, 2) if opts.remove_silence else 0.0,
             "fillers_removed": len(filler_cuts),
+            "repeats_removed": len(repeat_cuts),
             "cuts": max(0, len(segs) - 1),
             "pacing": pacing_key,
         })
@@ -228,28 +250,45 @@ def run_pipeline(svc: Services, video_id: str, handle: media.ProcHandle) -> None
         rep.set("Cutting & polishing", 50)
         editor.render_cut(cfg, src, plan, cut_path, work, rep.span("Cutting & polishing", 50, 74), handle)
 
-        # ---- 7. captions ------------------------------------------------- #
+        # ---- 7. captions + brand ------------------------------------------ #
+        brand = brand_mod.from_settings(settings, has_logo=(cfg.assets_dir / "logo.png").exists())
+        apply_brand = bool(settings.get("apply_brand", True)) if opts.brand is None else bool(opts.brand)
+        preset_key = opts.caption_preset or style["caption_preset"]
+        if preset_key != "brand" and preset_key not in CAPTION_PRESETS:
+            preset_key = style["caption_preset"]
+        chunk_style = brand_mod.caption_style(preset_key, brand, apply_brand, position=opts.caption_position,
+                                              scale=opts.caption_scale)
+        stats["caption_preset"] = (CAPTION_PRESETS[preset_key]["label"] if preset_key in CAPTION_PRESETS
+                                   else "My Brand")
+        libass_ok = ffmpeg_info(cfg.ffmpeg).libass
+        logo_on = (settings.get("logo_enabled") and apply_brand) if opts.logo is None else opts.logo
+        logo_file = cfg.assets_dir / "logo.png"
+        watermark: Optional[dict[str, Any]] = None
+        if apply_brand and brand.show_handle and brand.handle_text:
+            logo_right = brand.logo_position.endswith("right") and bool(logo_on)
+            watermark = {"text": brand.handle_text, "align": 7 if logo_right or not logo_on else 9,
+                         "color": "#FFFFFF"}
         ass_name: Optional[str] = None
         srt_path: Optional[Path] = None
-        if opts.captions and caption_words and not ffmpeg_info(cfg.ffmpeg).libass:
+        fonts_used = [chunk_style.get("font", ""), "inter_semibold"]
+        want_captions = bool(opts.captions and caption_words)
+        if want_captions and not libass_ok:
             notes.append("Captions were skipped because this FFmpeg build cannot draw them (it lacks libass). "
                          "Install a full FFmpeg build and try again; an .srt file was still saved.")
             srt_path = cfg.renders_dir / f"{video_id}.srt"
             srt_path.write_text(cap_mod.build_srt(caption_words), encoding="utf-8")
-        elif opts.captions and caption_words:
+        elif want_captions or (watermark and libass_ok):
             rep.set("Adding captions & b-roll", 75)
-            chunk_style = style["caption"]
-            chunks = cap_mod.group_words(caption_words, chunk_style["max_words"],
-                                         chunk_style["max_chars_line"])
-            brand = settings.get("brand_color", "") if settings.get("use_brand_color") else ""
+            chunks = (cap_mod.group_words(caption_words, chunk_style["max_words"], chunk_style["max_chars_line"])
+                      if want_captions else [])
             ass = cap_mod.build_ass(chunks, chunk_style, W, H, plat["safe_bottom"], plat["safe_top"],
-                                    emphasis=keywords, font_override=settings.get("caption_font", ""),
-                                    brand_color=brand)
+                                    emphasis=keywords, watermark=watermark, total=out_total)
             (work / "captions.ass").write_text(ass, encoding="utf-8")
             ass_name = "captions.ass"
-            srt_path = cfg.renders_dir / f"{video_id}.srt"
-            srt_path.write_text(cap_mod.build_srt(caption_words), encoding="utf-8")
-            stats["caption_lines"] = len(chunks)
+            if want_captions:
+                srt_path = cfg.renders_dir / f"{video_id}.srt"
+                srt_path.write_text(cap_mod.build_srt(caption_words), encoding="utf-8")
+                stats["caption_lines"] = len(chunks)
         elif opts.captions and need_words and source != "none":
             notes.append("No captions were added because the transcript was empty.")
 
@@ -258,17 +297,42 @@ def run_pipeline(svc: Services, video_id: str, handle: media.ProcHandle) -> None
         if opts.broll != "off":
             clips = _library_clips(svc)
             key = (settings.get("pexels_key") or "").strip()
-            if key and opts.stock_footage and len(clips) < 5:
+            stock_target = {"low": 3, "medium": 5, "high": 7}.get(opts.broll, 5)
+            stock_added = 0
+            if key and opts.stock_footage and len(clips) < stock_target and keywords:
                 rep.set("Adding captions & b-roll", 76, "Finding stock footage")
-                for kw in (keywords or [])[: 5 - len(clips)]:
-                    c = broll_mod.fetch_pexels(kw, key, cfg.cache_dir / "stock", portrait=H > W)
+                used_ids: set = set()
+                started, misses = time.time(), 0
+                for kw in keywords[:stock_target + 2]:
+                    if len(clips) >= stock_target or misses >= 2 or time.time() - started > 45:
+                        break          # offline or slow: stop waiting and use what we have
+                    c = broll_mod.fetch_pexels(kw, key, cfg.cache_dir / "stock", portrait=H > W, used_ids=used_ids)
                     if c:
                         clips.append(c)
+                        stock_added += 1
+                    else:
+                        misses += 1
+            card_count = 0
+            footage_count = len(clips)
+            if opts.broll_cards and footage_count < 3 and keywords and libass_ok:
+                # No (or hardly any) footage: branded keyword cards on the spoken word instead.
+                rep.set("Adding captions & b-roll", 77, "Making keyword cards")
+                look = brand if (apply_brand and brand.configured) else brand_mod.Brand()
+                for kw in keywords[:6]:
+                    card = cards.make_card(cfg, kw, W, H, look.primary, look.secondary, look.font, handle)
+                    if card:
+                        clips.append(broll_mod.Clip(path=str(card), duration=cards.CARD_SECONDS, tags=[kw],
+                                                    name=f"Card: {kw}", kind="card"))
+                        card_count += 1
             if clips:
                 placements = broll_mod.plan_broll(out_words or caption_words, out_total, clips, opts.broll,
                                                   seed=int(video_id[:6], 16))
+                stats["broll_cards"] = sum(1 for p in placements if p.clip.kind == "card")
+                if stats["broll_cards"] and not footage_count:
+                    notes.append("No B-roll footage was available, so Eden used animated keyword cards. Add clips "
+                                 "to your B-roll library or a free Pexels key in Settings for real footage.")
             else:
-                notes.append("No B-roll was available. Add clips to your B-roll Library or set a Pexels key "
+                notes.append("No B-roll was available. Add clips to your B-roll library or set a Pexels key "
                              "in Settings. Punch-in zooms keep the edit visually varied meanwhile.")
         stats["broll_count"] = len(placements)
         meta["broll"] = [p.as_dict() for p in placements]
@@ -293,12 +357,25 @@ def run_pipeline(svc: Services, video_id: str, handle: media.ProcHandle) -> None
 
         # ---- 8c. background music + sound effects ------------------------ #
         music_mix: Optional[editor.MusicMix] = None
-        if opts.music_id:
-            mrow = db.get("music", opts.music_id)
-            if mrow and Path(mrow["path"]).exists():
-                music_mix = editor.MusicMix(path=mrow["path"], volume=opts.music_volume,
-                                            duck=info.has_audio)
-                stats["music"] = mrow["name"]
+        music_id = opts.music_id
+        if music_id == "auto":
+            music_id = musicgen.BUILTIN_PREFIX + style["music"]
+        if music_id:
+            music_path, music_name = None, ""
+            if musicgen.is_builtin(music_id):
+                try:
+                    key = musicgen.builtin_key(music_id)
+                    rep.set("Adding captions & b-roll", 77, "Preparing music")
+                    music_path, music_name = str(musicgen.ensure_track(cfg.cache_dir, key)), musicgen.TRACKS[key].label
+                except Exception:
+                    music_path = None
+            else:
+                mrow = db.get("music", music_id)
+                if mrow and Path(mrow["path"]).exists():
+                    music_path, music_name = mrow["path"], mrow["name"]
+            if music_path:
+                music_mix = editor.MusicMix(path=music_path, volume=opts.music_volume, duck=info.has_audio)
+                stats["music"] = music_name
             else:
                 warnings.append("The chosen music track was missing, so the video was made without music.")
         sfx_hits: list[editor.SfxHit] = []
@@ -332,18 +409,16 @@ def run_pipeline(svc: Services, video_id: str, handle: media.ProcHandle) -> None
 
         # ---- 9. stage 2: compose + encode -------------------------------- #
         logo_path: Optional[Path] = None
-        logo_on = settings.get("logo_enabled") if opts.logo is None else opts.logo
-        candidate = svc.cfg.assets_dir / "logo.png"
-        if logo_on and candidate.exists():
-            logo_path = candidate
+        if logo_on and logo_file.exists():
+            logo_path = logo_file
         elif logo_on:
-            warnings.append("A logo was requested but none is uploaded yet (Settings > Branding).")
-        fonts = cfg.assets_dir / "fonts"
+            warnings.append("A logo was requested but none is uploaded yet (Brand kit).")
+        fonts = stage_fonts(work, fonts_used, cfg.assets_dir / "fonts") if ass_name else None
         fplan = editor.FinalPlan(width=W, height=H, fps=fps, duration=out_total, vbitrate=plat["vbitrate"],
-                                 broll=placements, ass_name=ass_name,
-                                 fonts_dir=str(fonts) if fonts.is_dir() else None, logo=logo_path,
-                                 logo_top=plat["safe_top"] + 0.01, has_audio=info.has_audio,
-                                 music=music_mix, sfx=sfx_hits)
+                                 broll=placements, ass_name=ass_name, fonts_dir=fonts, logo=logo_path,
+                                 logo_top=plat["safe_top"] + 0.01, logo_bottom=plat["safe_bottom"] + 0.01,
+                                 logo_pos=brand.logo_position, logo_frac=brand.logo_fraction,
+                                 has_audio=info.has_audio, music=music_mix, sfx=sfx_hits)
         out_path = cfg.renders_dir / f"{video_id}.mp4"
         rep.set("Adding captions & b-roll", 78)
         editor.render_final(cfg, cut_path, fplan, out_path, work, rep.span("Adding captions & b-roll", 78, 97), handle)
