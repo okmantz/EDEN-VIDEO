@@ -1,6 +1,6 @@
 [project]
 name = "eden-video"
-version = "1.0.0"
+version = "1.1.0"
 description = "EDEN VIDEO: a professional video editing app that turns raw footage into finished videos for Instagram, TikTok, Facebook and YouTube."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -10,6 +10,7 @@ dependencies = [
   "uvicorn[standard]>=0.30",
   "python-multipart>=0.0.9",
   "pydantic>=2.6",
+  "numpy>=1.24",
 ]
 
 [project.optional-dependencies]
