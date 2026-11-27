@@ -2,8 +2,9 @@
 import { h, fmtDur } from './util.js';
 import { icon } from './ui/icons.js';
 import { loadBrand, isConfigured, logoFile } from './brand.js';
-import { STYLE_PRESETS, BG_MUSIC, applyOneClick } from './autoedit.js';
-import { transcribe, wordsFromSubtitles, MODELS } from './asr.js';
+import { STYLE_PRESETS, BG_MUSIC, applyOneClick, adaptiveThreshold } from './autoedit.js';
+import { transcribe, wordsFromSubtitles, MODELS, LANGUAGES } from './asr.js';
+import { cleanWords, parseGlossary, wordsToLines, alignEdited } from './transcript.js';
 import { fetchStockFile } from './stock.js';
 import { MUSIC } from './synth.js';
 import { lookPicker } from './ui/looks.js';
@@ -12,6 +13,7 @@ import { RATIOS } from './model.js';
 const KEY = 'eden.oneclick.v2';
 const DEFAULTS = {
   style: 'viral', plan: null, captionPos: 'bottom', captionScale: 1, model: 'accurate', ratio: 'auto', applyBrand: true, outro: false, stock: true,
+  review: true, glossary: '', language: 'auto',
 };
 const preset = (id) => STYLE_PRESETS.find((s) => s.id === id) || STYLE_PRESETS[0];
 const load = () => {
@@ -61,11 +63,16 @@ export function oneClickDialog(app, file) {
   const modelSel = h('select.field', { 'aria-label': 'Speech model', on: { change: (e) => { o.model = e.target.value; } } },
     Object.entries(MODELS).map(([k, m]) => h('option', { value: k, selected: k === o.model }, m.label)));
   const modelWrap = fld('Speech recognition', modelSel);
+  const langSel = h('select.field', { 'aria-label': 'Spoken language', on: { change: (e) => { o.language = e.target.value; } } }, LANGUAGES.map(([v, l]) => h('option', { value: v, selected: v === o.language }, l)));
+  const langWrap = fld('Spoken language', langSel);
+  const syncLang = () => { langWrap.hidden = MODELS[o.model]?.en !== false; };
+  modelSel.addEventListener('change', syncLang); syncLang();
+  const glossary = h('input.field', { value: o.glossary, placeholder: 'e.g. EDEN, T58, Alex Morgan', maxLength: 200, 'aria-label': 'Names and special words', on: { input: (e) => { o.glossary = e.target.value; } } });
   const srtIn = h('input', { type: 'file', accept: '.srt,.vtt,text/vtt,application/x-subrip', hidden: true, on: { change: async (e) => {
     const f = e.target.files[0]; if (!f) return;
     const w = wordsFromSubtitles(await f.text());
     if (!w.length) { app.toast('No captions found in that file', 'err'); return; }
-    subtitle = w; srtNote.textContent = `Using ${f.name} (${w.length} words)`; modelWrap.hidden = true;
+    subtitle = w; srtNote.textContent = `Using ${f.name} (${w.length} words)`; modelWrap.hidden = true; langWrap.hidden = true;
   } } });
 
   const fine = [];
@@ -80,7 +87,9 @@ export function oneClickDialog(app, file) {
       h('div.tgs', toggle('Cut dead air', 'cutPauses'), toggle('Remove “um” and “uh”', 'cutFillers'), toggle('Remove false starts and retakes', 'cutRetakes', 'Keeps the last, best take'))),
     h('div.grp', h('h4', 'Captions'), toggle('Show captions', 'captions'), looks,
       h('div.row2', fld('Position', seg([['bottom', 'Bottom'], ['center', 'Middle'], ['top', 'Top']], () => o.captionPos, (v) => { o.captionPos = v; })),
-        fld('Size', seg([[0.85, 'S'], [1, 'M'], [1.2, 'L']], () => o.captionScale, (v) => { o.captionScale = v; })), modelWrap),
+        fld('Size', seg([[0.85, 'S'], [1, 'M'], [1.2, 'L']], () => o.captionScale, (v) => { o.captionScale = v; })), modelWrap, langWrap),
+      h('div.tgs', h('label.tg', sw(() => o.review, (v) => { o.review = v; }, 'Check captions first'), h('span', h('b', 'Check captions before applying'), h('small', 'Fix any word in seconds. Recommended.')))),
+      fld('Names and special words', glossary), h('small.srtnote', 'Spelled the way you type them, so brands and names come out right.'),
       h('div.srt', h('button.btn.sm.ghost', { type: 'button', on: { click: () => srtIn.click() } }, icon('upload', 15), 'I have a caption file (.srt)'), srtNote, srtIn)),
     h('div.grp', h('h4', 'Music and b-roll'),
       h('div.row2', fld('Music track', musicSel), segRow('Music level', [['subtle', 'Subtle'], ['balanced', 'Balanced'], ['present', 'Present']], 'musicLevel')),
@@ -136,9 +145,12 @@ export async function runOneClick(app, file, opts) {
       else {
         mark('listen');
         try {
-          words = await transcribe(app.bank.buffer(src.mediaId), { model: opts.model, onProgress: (p, label) => { note.textContent = label + (p ? ` ${Math.round(p * 100)}%` : ''); } });
+          words = await transcribe(app.bank.buffer(src.mediaId), { model: opts.model, language: opts.language, onProgress: (p, label) => { note.textContent = label + (p ? ` ${Math.round(p * 100)}%` : ''); } });
           note.textContent = '';
+          const env = app.bank.has(src.mediaId) ? app.bank.rmsDb(src.mediaId, 0.02) : null;
+          words = cleanWords(words, { db: env?.db || null, win: env?.win || 0.02, thr: env?.db ? adaptiveThreshold(env.db).threshold : -40, glossary: parseGlossary(opts.glossary) });
           if (!words.length) warnings.push('No speech was found in this video.');
+          else if (opts.review && opts.captions) { mark('listen'); words = await reviewCaptions(app, file, words); }
         } catch (e) {
           console.warn('speech recognition failed', e);
           words = null;
@@ -177,4 +189,38 @@ function summary(app, s, warnings) {
   app.modal({ title: 'Your edit is ready', lead: `${fmtDur(s.from)} became ${fmtDur(s.to)}. Review it, change anything you like, then export.`,
     body: h('div', h('ul.sumlist', lines), ...warnings.map((w) => h('div.warnbox', icon('info', 17), h('span', w)))),
     actions: [{ label: 'Open editor', ghost: true }, { label: 'Export now', primary: true, onClick: () => { setTimeout(() => app.exportDialog(), 80); } }] });
+}
+
+
+/**
+ * Let the person read and fix the transcript before it becomes captions and cuts.
+ * Each line has a play button, so a doubtful word can be checked against the sound. Returns the (possibly edited) words.
+ */
+function reviewCaptions(app, file, words) {
+  return new Promise((resolve) => {
+    const lines = wordsToLines(words);
+    const url = URL.createObjectURL(file);
+    const vid = h('video', { src: url, playsInline: true, preload: 'auto', style: { display: 'none' } });
+    let stopAt = 0;
+    vid.addEventListener('timeupdate', () => { if (stopAt && vid.currentTime >= stopAt) { vid.pause(); stopAt = 0; } });
+    const rows = lines.map((ln) => {
+      const ta = h('textarea.field.rv-text', { rows: Math.max(1, Math.ceil(ln.text.length / 34)), value: ln.text, 'aria-label': 'Caption text', spellcheck: true });
+      const play = h('button.btn.icon.sm.rv-play', { type: 'button', title: 'Hear this line', on: { click: () => {
+        if (!vid.paused) { vid.pause(); return; }
+        vid.currentTime = Math.max(0, ln.start - 0.15); stopAt = ln.end + 0.2; vid.play().catch(() => {});
+      } } }, icon('play', 15));
+      return { ln, ta, el: h('div.rv-row', h('span.rv-time', fmtDur(ln.start)), play, ta) };
+    });
+    const count = h('small', `${words.length} words`);
+    const done = (edited) => { vid.pause(); URL.revokeObjectURL(url); m.close(); resolve(edited); };
+    const apply = () => {
+      const text = rows.map((r) => r.ta.value.trim()).filter(Boolean).join('\n');
+      const edited = alignEdited(words, text);
+      done(edited.length ? edited : words);
+    };
+    const m = app.modal({ title: 'Check your captions', lead: 'Fix any word that was heard wrong. Timing stays in sync automatically. Tap a play button to hear a line.', wide: true, dismiss: false,
+      body: h('div.rv', vid, h('div.rv-list', ...rows.map((r) => r.el)), count),
+      actions: [{ label: 'Skip', ghost: true, onClick: () => { done(words); return false; } }, { label: 'Looks good', primary: true, onClick: () => { apply(); return false; } }] });
+    m.box.classList.add('rvbox');
+  });
 }

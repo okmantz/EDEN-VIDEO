@@ -13,6 +13,8 @@ vec3 hsv2rgb(vec3 c){vec3 p=abs(fract(c.xxx+vec3(0.,2./3.,1./3.))*6.-3.);return 
 const float PI=3.14159265359;
 `;
 
+import { EXTRA_TRANSITIONS, EXTRA_EFFECTS, EXTRA_FILTERS } from './effects-extra.js';
+
 export const VERT_FS = `#version 300 es
 in vec2 aPos; out vec2 vUv;
 void main(){ vUv = aPos + .5; gl_Position = vec4(aPos*2., 0., 1.); }`;
@@ -415,6 +417,7 @@ vec4 effect(vec2 uv){
  vec3 s=c.rgb+(c.rgb-b)*uAmt*2.2; s=(s-.5)*(1.+uAmt*.12)+.5;
  return vec4(s,c.a);
 }` },
+  ...EXTRA_EFFECTS,
 ];
 
 // ------------------------------------------------------------------ TRANSITIONS
@@ -511,6 +514,7 @@ export const TRANSITIONS = [
   { id: 'wave', name: 'Wavy', cat: 'Distort', glsl: `vec4 transition(vec2 uv,float p){
  float k=sin(p*PI); vec2 u=clamp(uv+vec2(sin(uv.y*16.+p*10.)*.05*k,0.),0.,1.);
  return mix(A(u),B(u),smoothstep(.3,.7,p)); }` },
+  ...EXTRA_TRANSITIONS,
 ];
 
 // ------------------------------------------------------------------ FILTERS (colour looks)
@@ -543,6 +547,7 @@ export const FILTERS = [
   { id: 'forest', name: 'Forest', cat: 'Stylized', look: L({ sat: 1.1, con: 1.08, sh: [0, .16, .08], hi: [.8, 1, .55], tint: .4, gam: [.98, 1.0, .96] }) },
   { id: 'sunset', name: 'Sunset', cat: 'Stylized', look: L({ sat: 1.25, con: 1.1, sh: [.3, .06, .22], hi: [1, .52, .3], tint: .6 }) },
   { id: 'drama', name: 'Dramatic', cat: 'Stylized', look: L({ sat: 1.05, con: 1.38, bri: -.04, vig: .3 }) },
+  ...EXTRA_FILTERS,
 ];
 
 // ------------------------------------------------------------------ BLEND MODES

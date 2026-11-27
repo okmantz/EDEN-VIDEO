@@ -1,6 +1,7 @@
 // Built-in animated B-roll. Each generator is a GLSL function rendered in real time at any resolution,
 // so the clips are tiny, royalty-free, loop-friendly and sharp on every canvas size.
 import { GLSL_COMMON } from './effects.js';
+import { EXTRA_GENERATORS } from './generators-extra.js';
 
 export const GENRES = [
   { id: 'nature', name: 'Nature' }, { id: 'city', name: 'City & Night' }, { id: 'tech', name: 'Tech & Business' },
@@ -440,6 +441,7 @@ vec3 gen(vec2 uv,vec2 p,float t){
   float rise=smoothstep(.0,.2,f); vec2 d=p-c; if(f<.22){ vec2 rp=vec2(c.x,mix(-.55,c.y,f/.22)); col+=vec3(1.,.8,.5)*exp(-length(p-rp)*60.); }
   else { float tt=(f-.22)/.78; float rad=tt*.42; float r=length(d); float a=atan(d.y,d.x); float spark=step(.5,hash(floor(a*24./6.28318)+id*13.+fi)); float ring=exp(-abs(r-rad*(.7+.3*hash(floor(a*24./6.28318)+id)))*38.); float fade=(1.-tt)*(1.-tt); col+=colr*ring*fade*(.8+spark)*3.2*smoothstep(.0,.05,tt); col+=colr*exp(-r*14.)*pow(1.-tt,3.)*.9; } }
  return col; }`),
+  ...EXTRA_GENERATORS,
 ];
 
 export const genById = (id) => GENERATORS.find((g) => g.id === id);

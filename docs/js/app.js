@@ -423,6 +423,8 @@ class App {
   // ------------------------------------------------------------ rail & sheets
   renderRail() {
     const rail = $('rail'); rail.replaceChildren();
+    if (!rail._endWatch) { rail._endWatch = true; const upd = () => { const v = rail.scrollWidth - rail.clientWidth - rail.scrollLeft < 6 && rail.scrollHeight - rail.clientHeight - rail.scrollTop < 6; rail.classList.toggle('end', v || (rail.scrollWidth <= rail.clientWidth && rail.scrollHeight <= rail.clientHeight)); }; rail.addEventListener('scroll', upd, { passive: true }); addEventListener('resize', upd); this._railUpd = upd; }
+    requestAnimationFrame(() => this._railUpd?.());
     const sel = this.store.sel.size ? this.store.selected : null;
     if (this.isMobile && this.store.sel.size && !this.panelOpen) {
       const c = sel?.clip;

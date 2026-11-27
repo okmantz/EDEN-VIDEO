@@ -11,16 +11,12 @@ import { MUSIC } from './synth.js';
 import { builtinMedia } from './audio.js';
 import { addBrandOverlays, addEndCard } from './autoedit.js';
 import { FONTS } from './textrender.js';
+import { S, CARD, T, PAL } from './tpl-kit.js';
+import { MORE_TEMPLATES } from './templates-more.js';
 
-export const CATEGORIES = ['All', 'Social', 'Business', 'Lifestyle', 'Cinematic', 'Energy'];
+export const CATEGORIES = ['All', 'Social', 'Business', 'Lifestyle', 'Cinematic', 'Energy', 'Events'];
 
-/* ----- tiny constructors keep the catalog readable ----- */
-const S = (label, hint, dur, o = {}) => ({ label, hint, dur, ...o });                    // a slot for the person's clip or photo
-const CARD = (label, dur, gen, o = {}) => ({ label, card: true, dur, gen, ...o });       // a title card on an animated scene (no clip needed)
-const T = (text, o = {}) => ({ text, ...o });                                            // a text layer
-
-/** Colors written as '$primary' etc. follow the brand when it is switched on. */
-const PAL = (primary, secondary, accent, text = '#FFFFFF') => ({ primary, secondary, accent, text });
+/* ----- tiny constructors live in tpl-kit.js ----- */
 
 export const TEMPLATES = [
   /* ================================================================= SOCIAL */
@@ -39,8 +35,8 @@ export const TEMPLATES = [
     trans: { type: 'pushleft', dur: 0.22 }, cover: { gen: 'dreambokeh', title: 'PHOTO\nDUMP' },
     slots: Array.from({ length: 8 }, (_, i) => S(`Photo ${i + 1}`, i === 0 ? 'Your favorite photo' : 'A photo or a short clip', 1.02, { tilt: i % 2 ? 2 : -2 })),
     inputs: [{ id: 'title', label: 'Title', value: 'photo dump', max: 22 }, { id: 'date', label: 'Small text', value: 'this month', max: 22 }],
-    layers: [T('{title}', { slot: 0, off: 0.1, dur: 1.0, style: 'Retro Script', size: 0.11, y: -0.3, in: 'pop', o: { stroke: { color: '$primary' }, color: '$accent' } }),
-      T('{date}', { slot: 0, off: 0.3, dur: 0.75, style: 'Tag', size: 0.04, y: -0.2, o: { bg: { color: '$accent' }, color: '#111111' }, in: 'slideup' })] },
+    layers: [T('{title}', { slot: 0, off: 0.1, dur: 1.0, style: 'Retro Script', size: 0.085, y: -0.34, in: 'pop', o: { stroke: { color: '$primary' }, color: '$accent' } }),
+      T('{date}', { slot: 0, off: 0.3, dur: 0.75, style: 'Tag', size: 0.04, y: -0.18, o: { bg: { color: '$accent' }, color: '#111111' }, in: 'slideup' })] },
 
   { id: 'top-3', name: 'Top 3 List', cat: 'Social', ratio: '9:16', blurb: 'A countdown with giant numbers and your own picks.',
     pal: PAL('#22D3EE', '#08131A', '#FFD24A'), music: 'techhouse', musicVol: 0.45, look: 'clean', gen: 'gradmesh', trans: { type: 'slideup', dur: 0.35 }, sfx: { id: 'pop', vol: 0.6 },
@@ -57,7 +53,7 @@ export const TEMPLATES = [
     fxLayers: [{ type: 'confetti', t: 0, dur: 2.6, amt: 0.8 }], sfx: { id: 'pop', vol: 0.5 }, cover: { gen: 'confettipop', title: 'EVENT\nRECAP' },
     slots: [S('Opening', 'Where it all began', 1.6), S('Moment 2', 'The crowd or the group', 1.6), S('Moment 3', 'A fun moment', 1.6), S('Moment 4', 'A candid shot', 1.6), S('Moment 5', 'The big moment', 1.6), S('Closing', 'How it ended', 2)],
     inputs: [{ id: 'title', label: 'Title', value: 'WHAT A NIGHT', max: 22 }, { id: 'when', label: 'Date and place', value: 'Saturday · Downtown', max: 30 }, { id: 'cta', label: 'End line', value: 'See you next time', max: 30 }],
-    layers: [T('{title}', { slot: 0, off: 0.1, style: 'Comic', size: 0.12, y: -0.12, o: { color: '$accent' }, in: 'pop' }), T('{when}', { slot: 0, off: 0.3, style: 'Tag', size: 0.042, y: 0.0, o: { bg: { color: '$primary' }, color: '#fff' }, in: 'slideup' }),
+    layers: [T('{title}', { slot: 0, off: 0.1, style: 'Comic', size: 0.095, y: -0.1, o: { color: '$accent', maxW: 0.85 }, in: 'pop' }), T('{when}', { slot: 0, off: 0.3, style: 'Tag', size: 0.042, y: 0.1, o: { bg: { color: '$primary' }, color: '#fff' }, in: 'slideup' }),
       T('{cta}', { slot: 5, off: 0.2, style: 'Handwritten', size: 0.1, y: 0.18, in: 'pop' })] },
 
   { id: 'before-after', name: 'Before & After', cat: 'Social', ratio: '9:16', blurb: 'A clean reveal from the old to the new.',
@@ -96,7 +92,7 @@ export const TEMPLATES = [
     pal: PAL('#FF5C8A', '#150A12', '#FFD24A'), music: 'techhouse', musicVol: 0.45, look: 'vivid', gen: 'gradmesh', trans: { type: 'slideleft', dur: 0.3 }, sfx: { id: 'impact', vol: 0.55 }, cover: { gen: 'lasers', title: 'BIG\nNEWS' },
     slots: [CARD('Headline', 2.4, 'gradmesh'), S('Point 1', 'A clip that shows it', 2.6), S('Point 2', 'Another proof point', 2.6), S('Point 3', 'The best part', 2.6), CARD('Call to action', 2.4, 'lasers')],
     inputs: [{ id: 'tag', label: 'Badge', value: 'BIG NEWS', max: 16 }, { id: 'title', label: 'Headline', value: 'We just launched', max: 30 }, { id: 'p1', label: 'Point 1', value: 'Twice as fast', max: 28 }, { id: 'p2', label: 'Point 2', value: 'Half the price', max: 28 }, { id: 'p3', label: 'Point 3', value: 'Available today', max: 28 }, { id: 'cta', label: 'Call to action', value: 'Link in bio', max: 26 }],
-    layers: [T('{tag}', { slot: 0, off: 0.2, style: 'Warning', size: 0.05, y: -0.14, in: 'pop' }), T('{title}', { slot: 0, off: 0.5, style: 'Bold Impact', size: 0.11, y: 0, o: { stroke: { color: '$primary' }, maxW: 0.8 }, in: 'pop' }),
+    layers: [T('{tag}', { slot: 0, off: 0.2, style: 'Warning', size: 0.05, y: -0.22, in: 'pop' }), T('{title}', { slot: 0, off: 0.5, style: 'Bold Impact', size: 0.09, y: 0.03, o: { stroke: { color: '$primary' }, maxW: 0.8 }, in: 'pop' }),
       T('{p1}', { slot: 1, off: 0.3, style: 'Podcast Box', size: 0.056, y: 0.28, in: 'slideup' }), T('{p2}', { slot: 2, off: 0.3, style: 'Podcast Box', size: 0.056, y: 0.28, in: 'slideup' }), T('{p3}', { slot: 3, off: 0.3, style: 'Podcast Box', size: 0.056, y: 0.28, in: 'slideup' }),
       T('{cta}', { slot: 4, off: 0.3, style: 'Tag', size: 0.08, y: 0.02, o: { bg: { color: '$accent' }, color: '#111' }, in: 'pop' })] },
 
@@ -156,6 +152,7 @@ export const TEMPLATES = [
     slots: [S('Setup', 'Before the play', 2.2, { fx: [['rgbsplit', 0.4]] }), S('The play', 'The moment', 2.4, { fx: [['rgbsplit', 0.35]] }), S('Reaction', 'Replay or reaction', 2.2, { fx: [['crt', 0.4]] }), S('Finish', 'The result screen', 2.8, { fx: [['crt', 0.4]] })],
     inputs: [{ id: 'title', label: 'Big word', value: 'CLUTCH', max: 14 }, { id: 'game', label: 'Game and rank', value: 'Ranked · Diamond', max: 30 }],
     layers: [T('{title}', { slot: 1, off: 0.2, dur: 1.8, style: 'Neon', size: 0.18, y: -0.05, o: { glow: { color: '$primary' } }, in: 'zoom' }), T('{game}', { slot: 0, off: 0.4, style: 'Tag', size: 0.04, y: -0.34, o: { bg: { color: '$accent' }, color: '#fff' }, in: 'slideright' })] },
+  ...MORE_TEMPLATES,
 ];
 
 /* ================================================================= helpers */
@@ -195,6 +192,77 @@ function pickWindow(bank, m, dur) {
 }
 
 /**
+ * Pure layout step: turns a template (plus optional media per slot) into clips, with no store or app involved.
+ * Used by buildTemplate for the real edit and by the preview renderer for the live cards.
+ * @returns {{main:object[], texts:object[], fxs:object[], cutTimes:number[], starts:number[], durs:number[], total:number}}
+ */
+export function layoutTemplate(tpl, { R, pal, vals, brand = null, useBrand = false, media = [], pick = () => 0, genFor = null }) {
+  const aspect = R.w / R.h, K = sizeK(aspect);
+  const starts = [], durs = [], cutTimes = [], main = [], texts = [], fxs = [];
+  const fxOf = (sl) => (sl.fx || []).map(([id, amt]) => ({ ...effectDefaults(id), amt }));
+  let t = 0;
+  tpl.slots.forEach((sl, i) => {
+    const m = media[i];
+    let dur = slotDur(tpl, sl), c;
+    if (m && m.kind === 'video') {
+      if (sl.full) dur = Math.min(m.duration, 120);
+      else dur = Math.max(0.6, Math.min(dur, m.duration));
+      c = videoClip(m, t); c.dur = dur; c.in = sl.full ? 0 : pick(m, dur);
+      if (tpl.keepAudio) { c.mute = false; c.vol = 1; } else { c.mute = true; c.vol = 0; }
+    } else if (m) {
+      c = videoClip(m, t); c.dur = dur; c.in = 0;
+    } else {
+      const g = GENERATORS.find((x) => x.id === (genFor ? genFor(sl, i) : (sl.gen || tpl.gen))) || GENERATORS[0];
+      c = genClip(g, t, dur); c.bgblur = false;
+      if (sl.genAt) c.in = sl.genAt;
+    }
+    c.start = t; c.name = sl.label;
+    if (c.kind !== 'gen' && sl.tilt) c.tf.r = sl.tilt;
+    if (tpl.look && tpl.look !== 'none' && c.kind !== 'gen') c.look = { id: sl.look || tpl.look, amt: 0.9 };
+    c.fxs = c.kind === 'gen' ? [] : fxOf(sl);
+    if (sl.dim && c.kind !== 'gen') c.adj = { ...c.adj, exp: -sl.dim };
+    // a slow push-in keeps photos and calm shots alive
+    if (c.kind === 'image' || sl.kb) {
+      c.kf = { s: [{ t: 0, v: 1, e: 'inout' }, { t: +dur.toFixed(3), v: 1.1, e: 'inout' }], x: [{ t: 0, v: i % 2 ? 0.012 : -0.012, e: 'inout' }, { t: +dur.toFixed(3), v: i % 2 ? -0.012 : 0.012, e: 'inout' }] };
+    }
+    const tr = sl.trans === undefined ? tpl.trans : sl.trans;
+    if (i > 0 && tr) { c.transIn = { type: tr.type, dur: Math.min(tr.dur, dur * 0.8, (durs[i - 1] || dur) * 0.8) }; cutTimes.push(t); }
+    starts.push(t); durs.push(dur); main.push(c);
+    t += dur;
+  });
+  const total = durs.reduce((a, b) => a + b, 0);
+
+  for (const L of tpl.layers || []) {
+    const content = fillText(L.text, vals); if (!content) continue;
+    const i = Math.min(L.slot ?? 0, tpl.slots.length - 1);
+    const base = TEXT_PRESETS.find((x) => x.name === L.style)?.text || {};
+    let patch = mergeText(mergeText(TEXT_DEFAULT(), base), tint(L.o || {}, pal));
+    patch = { ...patch, content, size: (L.size ?? patch.size) * K };
+    if (L.brandFont && useBrand && brand?.font) { patch.font = brand.font; patch.weight = fontW(brand.font); }
+    let t0 = L.from === 'end' ? total + (L.off ?? 0) : starts[i] + (L.off ?? 0.2);
+    t0 = Math.max(0, t0);
+    const span = L.span != null ? starts[Math.min(L.span, starts.length - 1)] + durs[Math.min(L.span, durs.length - 1)] : starts[i] + durs[i];
+    const dur = Math.max(0.45, Math.min(L.dur ?? (span - t0 - 0.05), total - t0));
+    const c = textClip(t0, dur, patch);
+    c.name = content.slice(0, 24);
+    c.tf.y = L.y ?? 0.18; c.tf.x = L.x ?? 0;
+    c.animIn = { id: L.in || 'pop', dur: L.inDur || 0.35 };
+    c.animOut = { id: L.out || 'fade', dur: 0.25 };
+    if (L.scroll) c.kf = { y: [{ t: 0, v: L.scroll[0], e: 'linear' }, { t: +dur.toFixed(3), v: L.scroll[1], e: 'linear' }] };
+    if (L.loop) c.animLoop = { id: L.loop, amt: 1 };
+    texts.push(c);
+  }
+  for (const F of tpl.fxLayers || []) {
+    const mk = (s, d) => fxs.push(fxClip(F.type, s, d, { ...effectDefaults(F.type), amt: F.amt ?? 0.7 }));
+    if (F.at === 'cuts') cutTimes.forEach((ct) => mk(Math.max(0, ct - F.dur / 2), F.dur));
+    else { const s = F.t ?? 0; mk(s, F.dur === 'total' ? total - s : Math.min(F.dur, total - s)); }
+  }
+  return { main, texts, fxs, cutTimes, starts, durs, total };
+}
+
+export const templateValues = (tpl, values = {}) => { const v = {}; for (const f of tpl.inputs || []) v[f.id] = (values[f.id] ?? f.value); return v; };
+
+/**
  * Build the template into a new project and open it in the editor.
  * @param app   the running App (uses createProject, lib, bank, store)
  * @param opts  { files: (File|null)[] per slot, values: {id:text}, brand, useBrand, ratio, onStep(label) }
@@ -205,7 +273,7 @@ export async function buildTemplate(app, tpl, { files = [], values = {}, brand, 
   const pal = useBrand && brand ? brandPalette(brand) : tpl.pal;
   const st = app.store;
   const warnings = [];
-  const vals = {}; for (const f of tpl.inputs || []) vals[f.id] = (values[f.id] ?? f.value);
+  const vals = templateValues(tpl, values);
 
   onStep('Setting up');
   await app.createProject(R.id, tpl.name);
@@ -220,75 +288,22 @@ export async function buildTemplate(app, tpl, { files = [], values = {}, brand, 
   }
   const missing = tpl.slots.filter((s, i) => !s.card && !media[i]).length;
 
-  /* ---- timeline ---- */
+  /* ---- timeline, text and effects ---- */
   onStep('Building the timeline');
-  const aspect = R.w / R.h, K = sizeK(aspect);
-  const starts = []; const durs = []; const cutTimes = [];
-  const fxOf = (sl) => (sl.fx || []).map(([id, amt]) => ({ ...effectDefaults(id), amt }));
+  const lay = layoutTemplate(tpl, { R, pal, vals, brand, useBrand, media, pick: (m, dur) => pickWindow(app.bank, m, dur) });
+  const { total } = lay;
   st.commit((p) => {
+    for (const m of media) if (m) p.media[m.id] = m;
     const main = st.mainTrack;
-    let t = 0;
-    tpl.slots.forEach((sl, i) => {
-      const m = media[i];
-      let dur = slotDur(tpl, sl), c;
-      if (m && m.kind === 'video') {
-        if (sl.full) dur = Math.min(m.duration, 120);
-        else dur = Math.max(0.6, Math.min(dur, m.duration));
-        p.media[m.id] = m;
-        c = videoClip(m, t); c.dur = dur; c.in = sl.full ? 0 : pickWindow(app.bank, m, dur);
-        if (tpl.keepAudio) { c.mute = false; c.vol = 1; } else { c.mute = true; c.vol = 0; }
-      } else if (m) {
-        p.media[m.id] = m;
-        c = videoClip(m, t); c.dur = dur; c.in = 0;
-      } else {
-        const g = GENERATORS.find((x) => x.id === (sl.gen || tpl.gen)) || GENERATORS[0];
-        c = genClip(g, t, dur); c.bgblur = false;
-      }
-      c.start = t; c.name = sl.label;
-      if (c.kind !== 'gen' && sl.tilt) c.tf.r = sl.tilt;
-      if (tpl.look && tpl.look !== 'none' && c.kind !== 'gen') c.look = { id: sl.look || tpl.look, amt: 0.9 };
-      c.fxs = c.kind === 'gen' ? [] : fxOf(sl);
-      if (sl.dim && c.kind !== 'gen') c.adj = { ...c.adj, exp: -sl.dim };
-      // a slow push-in keeps photos and calm shots alive
-      if (c.kind === 'image' || sl.kb) {
-        c.kf = { s: [{ t: 0, v: 1, e: 'inout' }, { t: +dur.toFixed(3), v: 1.1, e: 'inout' }], x: [{ t: 0, v: i % 2 ? 0.012 : -0.012, e: 'inout' }, { t: +dur.toFixed(3), v: i % 2 ? -0.012 : 0.012, e: 'inout' }] };
-      }
-      const tr = sl.trans === undefined ? tpl.trans : sl.trans;
-      if (i > 0 && tr) { c.transIn = { type: tr.type, dur: Math.min(tr.dur, dur * 0.8, (durs[i - 1] || dur) * 0.8) }; cutTimes.push(t); }
-      starts.push(t); durs.push(dur); main.clips.push(c);
-      t += dur;
-    });
+    for (const c of lay.main) main.clips.push(c);
     st.sel.clear();
   });
-  const total = durs.reduce((a, b) => a + b, 0);
-
-  /* ---- text ---- */
   onStep('Adding text and effects');
   st.commit(() => {
-    for (const L of tpl.layers || []) {
-      const content = fillText(L.text, vals); if (!content) continue;
-      const i = Math.min(L.slot ?? 0, tpl.slots.length - 1);
-      const base = TEXT_PRESETS.find((x) => x.name === L.style)?.text || {};
-      let patch = mergeText(mergeText(TEXT_DEFAULT(), base), tint(L.o || {}, pal));
-      patch = { ...patch, content, size: (L.size ?? patch.size) * K };
-      if (L.brandFont && useBrand && brand?.font) { patch.font = brand.font; patch.weight = fontW(brand.font); }
-      let t0 = L.from === 'end' ? total + (L.off ?? 0) : starts[i] + (L.off ?? 0.2);
-      t0 = Math.max(0, t0);
-      const span = L.span != null ? starts[Math.min(L.span, starts.length - 1)] + durs[Math.min(L.span, durs.length - 1)] : starts[i] + durs[i];
-      const dur = Math.max(0.45, Math.min(L.dur ?? (span - t0 - 0.05), total - t0));
-      const c = textClip(t0, dur, patch);
-      c.name = content.slice(0, 24);
-      c.tf.y = L.y ?? 0.18; c.tf.x = L.x ?? 0;
-      c.animIn = { id: L.in || 'pop', dur: L.inDur || 0.35 };
-      c.animOut = { id: L.out || 'fade', dur: 0.25 };
-      st.trackFor('text', t0, dur).clips.push(c);
-    }
-    for (const F of tpl.fxLayers || []) {
-      const mk = (s, d) => { const c = fxClip(F.type, s, d, { ...effectDefaults(F.type), amt: F.amt ?? 0.7 }); st.trackFor('fx', s, d).clips.push(c); };
-      if (F.at === 'cuts') cutTimes.forEach((ct) => mk(Math.max(0, ct - F.dur / 2), F.dur));
-      else { const s = F.t ?? 0; mk(s, F.dur === 'total' ? total - s : Math.min(F.dur, total - s)); }
-    }
+    for (const c of lay.texts) st.trackFor('text', c.start, c.dur).clips.push(c);
+    for (const c of lay.fxs) st.trackFor('fx', c.start, c.dur).clips.push(c);
   });
+  const cutTimes = lay.cutTimes;
 
   /* ---- sound ---- */
   if (tpl.music) {
