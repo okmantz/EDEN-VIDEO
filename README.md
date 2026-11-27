@@ -17,9 +17,18 @@ Two editions live in this repo:
 
 1. Push this repo to GitHub.
 2. Open **Settings → Pages**.
-3. Under **Build and deployment**, set **Source** to **Deploy from a branch**, **Branch** to `main`, folder to **`/docs`**, then **Save**.
+3. Under **Build and deployment**, set **Source** to **Deploy from a branch**, **Branch** to `main`, then **Save**. Either folder works: **`/ (root)`** forwards visitors to the app automatically, and **`/docs`** serves it directly.
 4. Wait a minute, then open the link GitHub shows at the top of that page.
-5. On your phone, open the link and choose **Add to Home Screen** (iPhone: Share → Add to Home Screen; Android: menu → Install app). It then opens full screen like a native app and works offline.
+
+### Install it like an app
+
+- **iPhone / iPad (Safari):** Share → **Add to Home Screen**.
+- **Android (Chrome):** tap **Install** in the app's top bar, or menu → **Install app**.
+- **Desktop (Chrome / Edge):** click **Install** in the top bar, or the install icon in the address bar.
+
+It then opens full screen and works offline. Your projects and media stay on your device.
+
+**Updates:** the app checks for a new version each time it opens. When one is ready, a message appears; tap **Reload** to switch to it.
 
 ### What's inside
 
