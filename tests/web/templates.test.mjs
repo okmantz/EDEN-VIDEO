@@ -16,4 +16,7 @@ for(const t of TEMPLATES){
  t.slots.forEach((s,i)=>{ if(s.gen&&!gens.has(s.gen)) e(t.id+' slot gen '+s.gen); for(const [id] of s.fx||[]) if(!fxs.has(id)) e(t.id+' slot fx '+id); });
  for(const l of t.layers){ if(!tp.has(l.style)) e(t.id+' style '+l.style); if(l.slot>=t.slots.length) e(t.id+' layer slot'); const ks=[...l.text.matchAll(/\{(\w+)\}/g)].map(m=>m[1]); for(const k of ks) if(!t.inputs.find(i=>i.id===k)) e(t.id+' input '+k); }
 }
+const ids=new Set(); for(const t of TEMPLATES){ if(ids.has(t.id)) e('dup id '+t.id); ids.add(t.id); if(t.posterAt!=null&&!(t.posterAt>=0)) e(t.id+' posterAt'); if(t.slots.length<1) e(t.id+' no slots'); if(!t.name||!t.cat) e(t.id+' name/cat'); }
+if(TEMPLATES.length<40) e('expected 40+ templates');
+for(const [n,set,min] of [['generators',gens,75],['transitions',trs,55],['effects',fxs,60],['music',mus,24],['sfx',sfx,26]]) if(set.size<min) e(n+' count '+set.size);
 console.log(TEMPLATES.length,'templates;',bad,'problems');
