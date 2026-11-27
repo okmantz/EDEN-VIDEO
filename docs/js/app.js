@@ -2,6 +2,8 @@
 import { h, clamp, fmtTime, fmtDur, fmtBytes, downloadBlob, safeName, isMobile, debounce, EASE, deep, uid } from './util.js';
 import { Store } from './state.js';
 import { AudioBank, builtinMedia } from './audio.js';
+import { loadBrand, saveBrand, applyTheme, brandDialog, isConfigured } from './brand.js';
+import { oneClickDialog } from './oneclick.js';
 import { MediaLibrary, Storage } from './media.js';
 import { Engine } from './engine.js';
 import { loadFonts, mergeText, TEXT_PRESETS } from './textrender.js';
@@ -29,6 +31,8 @@ function toast(msg, kind = '', ms = 2600, action = null) {
   return t;
 }
 window.EDEN = { toast };
+const initBrand = () => { try { applyTheme(loadBrand()); } catch {} };
+initBrand();
 
 /** Dialog. On phones it slides up as a bottom sheet. Esc / tapping outside closes it (unless dismiss:false). */
 function modal({ title, lead, body, actions = [], dismiss = true, wide = false, onClose }) {
@@ -63,9 +67,17 @@ function ago(ts) {
   return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: s > 31536000 ? 'numeric' : undefined });
 }
 
+function brandAvatar() {
+  const b = loadBrand();
+  if (b.logo) return h('img.bav', { src: b.logo, alt: '' });
+  if (isConfigured(b)) return h('i.bav', { style: { background: b.primary } });
+  return icon('palette', 16);
+}
+
 class App {
   constructor() {
     this.isMobile = isMobile();
+    this.modal = modal; this.toast = toast;
     this.store = new Store();
     this.bank = new AudioBank();
     this.lib = new MediaLibrary(this.bank);
@@ -128,6 +140,7 @@ class App {
       h('button.more', { title: 'Project options', on: { click: (e) => { e.stopPropagation(); this.projectMenu(p, e); } } }, icon('dots', 16)),
       h('div.meta', h('b', p.name), h('span', 'Edited ' + ago(p.updated)))));
     this.startPick = h('input', { type: 'file', accept: MEDIA_ACCEPT, multiple: true, hidden: true, on: { change: (e) => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) this.startFromFiles(fs); } } });
+    this.editPick = h('input', { type: 'file', accept: 'video/*,.mp4,.mov,.m4v,.webm', hidden: true, on: { change: (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) oneClickDialog(this, f); } } });
     this.installBtn = h('button.btn.sm', { title: 'Install EDEN Studio', on: { click: () => this.install() } }, icon('download', 16), h('span', 'Install'));
     this.installCard = h('div.install-card', h('div.ci', icon('phone', 22)), h('div', h('b', 'Install EDEN Studio'), h('span', 'Add it to your home screen for a full-screen app that works offline.')), h('button.btn.primary.sm', { on: { click: () => this.install() } }, 'Install'));
     this.statusRow = h('div.status-row');
@@ -141,20 +154,22 @@ class App {
       ['audio', 'Music & sound', `${MUSIC.length} original tracks and ${SFX.length} sound effects, with auto-ducking.`],
       ['export', '4K export', 'H.264 MP4 up to 4K, rendered on your device and shared in one tap.'],
     ];
-    home.replaceChildren(this.startPick, h('div.home-in',
-      h('div.home-nav', h('div.brand', logoMark(34), h('b', 'EDEN'), h('span', 'STUDIO')), h('div.sp'), this.installBtn,
+    home.replaceChildren(this.startPick, this.editPick, h('div.home-in',
+      h('div.home-nav', h('div.brand', logoMark(34), h('b', 'EDEN'), h('span', 'STUDIO')), h('div.sp'), h('button.btn.sm.profile-btn', { title: 'Brand profile', on: { click: () => brandDialog(this, () => this.showHome()) } }, brandAvatar(), h('span', isConfigured(loadBrand()) ? (loadBrand().name || 'Brand') : 'Brand profile')), this.installBtn,
         h('button.btn.ghost.icon', { title: 'Help and shortcuts', on: { click: () => this.helpDialog() } }, icon('help', 21))),
       h('section.hero',
         h('div.hero-copy',
           h('span.eyebrow', h('i'), 'Free · Private · Works offline'),
-          h('h1', 'Pro video editing,', h('br'), h('em', 'right in your browser.')),
-          h('p', 'A full multi-track editor with effects, transitions, music, captions and 4K export. Your files never leave your device.'),
-          h('div.row', h('button.btn.primary.lg', { on: { click: () => this.newProjectDialog() } }, icon('plus', 20), 'New project'),
-            h('button.btn.lg', { on: { click: () => this.startPick.click() } }, icon('upload', 19), 'Start from a video')),
+          h('h1', 'Upload a video.', h('br'), h('em', 'Get a finished edit.')),
+          h('p', 'One tap cuts the dead air, adds captions, quiet music and b-roll, and applies your brand. Everything runs on your device.'),
+          h('div.row', h('button.btn.primary.lg', { on: { click: () => this.editPick.click() } }, icon('magic', 20), 'Edit for me'),
+            h('button.btn.lg', { on: { click: () => this.startPick.click() } }, icon('upload', 19), 'Edit myself'),
+            h('button.btn.lg.ghost', { on: { click: () => this.newProjectDialog() } }, icon('plus', 19), 'Blank project')),
           h('div.trust', h('span', icon('shield', 16), 'Files stay on your device'), h('span', icon('bolt', 16), 'Exports in seconds'), h('span', icon('cloudoff', 16), 'Works offline'))),
         h('div.hero-art', { 'aria-hidden': 'true' }, h('div.mock-phone', h('i')),
           h('div.mock-tl', row([3, 0, '#3b5a86'], [2, 0, '#4b3a72'], [3, 0, '#2c6b6b']), row([2, 0, '#7a6417'], [4, 0, '#2d4a6e'], [1, 0, '#7a2e58'])))),
       this.installCard,
+      h('h2.sec', 'How Edit for me works'), h('div.steps3', [['upload', 'Pick a video', 'Any phone clip, podcast or talking-head recording.'], ['magic', 'Review the plan', 'Choose a caption look, music level and b-roll amount.'], ['export', 'Export', 'Tweak anything in the full editor, then share.']].map(([ic, t, d], i) => h('div.st', h('span.n', i + 1), h('div.ci', icon(ic, 19)), h('b', t), h('span', d)))),
       h('h2.sec', 'Start with a format'), h('div.formats', fmtCards),
       h('h2.sec', 'Your projects', list.length ? h('span.count', list.length) : null),
       list.length ? h('div.projects', newCard, cards)
