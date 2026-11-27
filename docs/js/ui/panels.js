@@ -4,7 +4,7 @@ import { icon } from './icons.js';
 import { lazyThumb } from '../thumbs.js';
 import { GENRES, GENERATORS } from '../generators.js';
 import { EFFECTS, TRANSITIONS, FILTERS } from '../effects.js';
-import { MUSIC, SFX } from '../synth.js';
+import { MUSIC, SFX, moodColor } from '../synth.js';
 import { builtinMedia } from '../audio.js';
 import { TEXT_PRESETS, SHAPE_LIST } from '../textrender.js';
 import { RATIOS } from '../model.js';
@@ -121,7 +121,7 @@ export class Panels {
     wrap.append(body);
     if (state.audioTab === 'music') {
       body.append(h('div.hint', 'Original royalty-free tracks generated in your browser. They loop under your video and can duck beneath speech.'));
-      for (const m of MUSIC) body.append(this._audioRow(builtinMedia.music(m.id), m.color, `${m.mood} · ${m.bpm} BPM`, { loop: true, vol: 0.55, duck: true }));
+      for (const m of MUSIC) body.append(this._audioRow(builtinMedia.music(m.id), moodColor(m), `${m.mood} · ${m.bpm} BPM`, { loop: true, vol: 0.55, duck: true }));
     } else if (state.audioTab === 'sfx') {
       for (const s of SFX) body.append(this._audioRow(builtinMedia.sfx(s.id), '#5fd0ff', fmtDur(s.dur), { vol: 1 }));
     } else {

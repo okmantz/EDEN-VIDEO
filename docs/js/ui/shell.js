@@ -7,6 +7,8 @@ import { RATIOS } from '../model.js';
 import { oneClickDialog } from '../oneclick.js';
 import { TEMPLATES, CATEGORIES, buildTemplate, templateDuration, templateClipSlots, brandPalette } from '../templates.js';
 import { logoFile } from '../brand.js';
+import { lazyPoster, LivePreview } from '../tplpreview.js';
+import { builtinMedia } from '../audio.js';
 
 const $ = (id) => document.getElementById(id);
 const MEDIA = 'video/*,image/*,.mp4,.mov,.m4v,.webm,.jpg,.jpeg,.png,.webp,.heic';
@@ -26,6 +28,7 @@ const pickFile = (accept, multiple, cb) => {
 /* ======================================================================================================== shell */
 export async function showShell(app, tab) {
   if (app.engine) app.engine.pause();
+  fillPrev?.destroy(); fillPrev = null; liveCards.clear();
   document.title = 'EDEN Studio';
   tab = TABS.some((t) => t[0] === tab) ? tab : 'home';
   app.shellTab = tab;
@@ -98,17 +101,44 @@ async function viewHome(app, go) {
 }
 
 /* ======================================================================================================== templates */
-const cover = (t, brand, useBrand) => {
-  const p = useBrand && brand && isConfigured(brand) ? brandPalette(brand) : t.pal;
-  const R = RATIOS.find((r) => r.id === t.ratio) || RATIOS[0], w = R.w, hh = R.h;
-  const lines = (t.cover?.title || t.name).split('\n');
-  return h('div.cover', { style: `--p:${p.primary};--s:${p.secondary};--a:${p.accent};--t:${p.text};aspect-ratio:${w}/${hh}` },
-    h('i.glow'), h('i.glow2'), h('div.ctitle', lines.map((l) => h('span', l))), h('div.cdots', t.slots.slice(0, 8).map(() => h('i'))));
-};
+/* ---- live card previews: hover on desktop, the card nearest the middle of the screen on touch ---- */
+let fillPrev = null;
+const liveCards = new Map();                // card element -> { start, stop }
+const fine = matchMedia('(hover:hover) and (pointer:fine)');
+const calm = matchMedia('(prefers-reduced-motion: reduce)');
+let liveTimer = 0;
+const io = new IntersectionObserver((es) => { for (const e of es) { const c = liveCards.get(e.target); if (c) c.visible = e.isIntersecting; } pickLive(); }, { threshold: [0, 0.6] });
+function pickLive() {
+  if (fine.matches || calm.matches) return;
+  clearTimeout(liveTimer);
+  liveTimer = setTimeout(() => {
+    const mid = innerHeight * 0.45; let best = null, bd = 1e9;
+    for (const [el, c] of liveCards) { if (!c.visible) continue; const r = el.getBoundingClientRect(); const d = Math.abs(r.top + r.height / 2 - mid); if (d < bd && r.height > 40) { bd = d; best = c; } }
+    for (const c of liveCards.values()) if (c !== best && c.on) c.stop();
+    if (best && !best.on) best.start();
+  }, 220);
+}
+function attachLive(card, media, t) {
+  let lp = null; const cv = h('canvas.tlive');
+  media.append(cv);
+  const c = { visible: false, on: false,
+    start: async () => {
+      if (!lp) { lp = new LivePreview(cv, t, {}); lp.onStart = () => { c.on = true; cv.classList.add('on'); }; lp.onStop = () => { c.on = false; cv.classList.remove('on'); }; lp.refresh(); }
+      lp.play();
+    },
+    stop: () => lp?.pause() };
+  liveCards.set(card, c); io.observe(card);
+  if (fine.matches) { card.addEventListener('pointerenter', c.start); card.addEventListener('pointerleave', c.stop); card.addEventListener('focus', c.start); card.addEventListener('blur', c.stop); }
+}
 function tplCard(t, app, brand) {
-  return h('button.tcard', { type: 'button', 'aria-label': 'Use template ' + t.name, on: { click: () => openTemplate(app, t) } },
-    cover(t, brand, false), t.badge ? h('span.tbadge', t.badge) : null,
-    h('div.tmeta', h('b', t.name), h('small', `${t.ratio} · ${Math.round(templateDuration(t))}s · ${templateClipSlots(t)} ${templateClipSlots(t) === 1 ? 'clip' : 'clips'}`)));
+  const R = RATIOS.find((r) => r.id === t.ratio) || RATIOS[0];
+  const media = h('div.tmedia', { style: `aspect-ratio:${R.w}/${R.h};--p:${t.pal.primary};--s:${t.pal.secondary}` }, h('span.tplay', icon('play', 16)));
+  lazyPoster(media, t);
+  const card = h('button.tcard', { type: 'button', 'aria-label': 'Use template ' + t.name, on: { click: () => openTemplate(app, t) } },
+    media, t.badge ? h('span.tbadge', t.badge) : null, h('span.tratio', t.ratio),
+    h('div.tmeta', h('b', t.name), h('small', `${Math.round(templateDuration(t))}s · ${templateClipSlots(t)} ${templateClipSlots(t) === 1 ? 'clip' : 'clips'}`)));
+  attachLive(card, media, t);
+  return card;
 }
 async function viewTemplates(app, go) {
   const brand = loadBrand();
@@ -133,8 +163,18 @@ function openTemplate(app, t) {
   let useBrand = isConfigured(brand) && brand.apply !== false, ratio = t.ratio;
 
   const main = $('shellMain');
-  const coverBox = h('div.fill-cover');
-  const drawCover = () => coverBox.replaceChildren(cover(t, brand, useBrand));
+  fillPrev?.destroy();
+  const R0 = RATIOS.find((r) => r.id === t.ratio) || RATIOS[0];
+  const pv = h('canvas.fill-canvas', { width: 270, height: 480, 'aria-label': 'Live preview of this template' });
+  const coverBox = h('div.fill-cover', pv);
+  fillPrev = new LivePreview(pv, t, { values, brand, useBrand, height: 560, ratio });
+  const playBtn = h('button.btn.sm.pvbtn', { type: 'button', 'aria-label': 'Play or pause the preview', on: { click: () => { if (fillPrev.playing) fillPrev.pause(); else fillPrev.play(fillPrev.hold || 0); } } }, icon('pause', 15));
+  fillPrev.onStart = () => playBtn.replaceChildren(icon('pause', 15)); fillPrev.onStop = () => playBtn.replaceChildren(icon('play', 15));
+  let musicBtn = null;
+  if (t.music) { musicBtn = h('button.btn.sm.pvbtn', { type: 'button', 'aria-label': 'Hear the music', on: { click: async () => { const on = await app.previewAudio(builtinMedia.music(t.music)); musicBtn.classList.toggle('on', !!on); } } }, icon('audio', 15), 'Music'); app.onPreviewEnd = () => musicBtn?.classList.remove('on'); }
+  const drawCover = () => fillPrev.setOptions({ useBrand, ratio, values: { ...values } });
+  let pvT = 0; const refreshSoon = () => { clearTimeout(pvT); pvT = setTimeout(() => fillPrev.setOptions({ values: { ...values } }), 140); };
+  setTimeout(() => { fillPrev.refresh(); if (!calm.matches) fillPrev.play(0); }, 30);
 
   const slotsEl = h('div.slots');
   const setFile = (i, f) => {
@@ -164,7 +204,7 @@ function openTemplate(app, t) {
   }));
   drawSlots();
 
-  const texts = (t.inputs || []).map((f) => h('label.fld', h('span', f.label), h('input.field', { value: f.value, maxLength: f.max || 60, 'aria-label': f.label, on: { input: (e) => { values[f.id] = e.target.value; } } })));
+  const texts = (t.inputs || []).map((f) => h('label.fld', h('span', f.label), h('input.field', { value: f.value, maxLength: f.max || 60, 'aria-label': f.label, on: { input: (e) => { values[f.id] = e.target.value; refreshSoon(); } } })));
 
   const create = h('button.btn.primary.lg.go', { on: { click: () => run() } }, icon('magic', 19), 'Create video');
   const status = h('small.cstat', '');
@@ -176,7 +216,7 @@ function openTemplate(app, t) {
   const brandSwitch = isConfigured(brand) ? h('label.tg', (() => { const i = h('input', { type: 'checkbox', checked: useBrand, on: { change: () => { useBrand = i.checked; drawCover(); } } }); return h('label.sw.mini', i, h('span.trk')); })(),
     h('span', h('b', `Use my brand${brand.name ? ' (' + brand.name + ')' : ''}`), h('small', 'Colors, font, handle, logo and end card'))) : h('button.bcard.todo.slim', { on: { click: () => showShell(app, 'brand') } }, h('span.bi', icon('palette', 18)), h('div', h('b', 'Add your brand'), h('small', 'Colors and logo apply to every template')), icon('chevron', 16));
   const fmt = h('div.seg');
-  const drawFmt = () => fmt.replaceChildren(...RATIOS.slice(0, 4).map((r) => h('button' + (ratio === r.id ? '.on' : ''), { type: 'button', on: { click: () => { ratio = r.id; drawFmt(); } } }, r.id)));
+  const drawFmt = () => fmt.replaceChildren(...RATIOS.slice(0, 4).map((r) => h('button' + (ratio === r.id ? '.on' : ''), { type: 'button', on: { click: () => { ratio = r.id; drawFmt(); fillPrev.setOptions({ ratio }); } } }, r.id)));
   drawFmt();
   const several = h('button.btn.sm', { type: 'button', on: { click: () => pickFile(MEDIA, true, fill) } }, icon('upload', 15), 'Add several at once');
 
@@ -192,11 +232,11 @@ function openTemplate(app, t) {
     } catch (e) { console.error(e); dlg.close(); app.toast(e.message || 'Could not build that template', 'err', 6000); }
   }
 
-  drawCover(); upd();
+  upd();
   main.replaceChildren(h('div.view.v-fill',
     h('button.back', { on: { click: () => showShell(app, 'templates') } }, icon('back', 18), 'Templates'),
     h('div.fill',
-      h('aside.fill-l', coverBox, h('h1', t.name), h('p', t.blurb), h('div.tags', h('span', t.ratio), h('span', `~${Math.round(templateDuration(t))}s`), h('span', t.cat))),
+      h('aside.fill-l', h('div.fill-stage', coverBox, h('div.pvbar', playBtn, musicBtn, h('small', 'Preview with sample scenes'))), h('h1', t.name), h('p', t.blurb), h('div.tags', h('span', t.ratio), h('span', `~${Math.round(templateDuration(t))}s`), h('span', t.cat))),
       h('div.fill-r',
         h('section.fcard', h('div.fh', h('h3', '1 · Your clips'), several), h('p.fhint', 'Tap a slot to choose a video or photo. Drag files onto a slot too.'), slotsEl),
         texts.length ? h('section.fcard', h('div.fh', h('h3', '2 · Your words')), h('div.tfields', texts)) : null,
