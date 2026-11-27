@@ -43,7 +43,7 @@ def test_music_ducking_graph_uses_sidechain_compression():
     g = build_final_audio_graph(plan, 1, [2])
     assert g is not None
     assert "sidechaincompress" in g and "amix=inputs=3" in g
-    assert "adelay=2500|2500" in g and "volume=0.5[mus]" in g
+    assert "adelay=2500|2500" in g and "volume=0.5," in g and "afade=t=out" in g
 
 
 def test_sfx_only_graph_has_no_ducking():
