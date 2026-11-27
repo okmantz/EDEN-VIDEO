@@ -36,7 +36,7 @@ The web app opens on four tabs: **Home**, **Templates**, **Projects** and **Bran
 
 - **Edit for me.** Drop in a video and pick a style (Viral Short, Authority, Clean Pro, Podcast, Cinematic). It cuts dead air, "um"s, stutters and false starts without clipping words, adds word-timed captions in 19 caption looks, mixes quiet music that ducks under your voice, adds b-roll, and applies your brand. **Fine-tune** exposes pacing, caption look, position and size, music, b-roll amount, colour grade, end card and format. Captions use Whisper in the browser: it downloads once, so be online the first time, or import an `.srt` instead.
 - **Real stock b-roll (optional).** Paste a free [Pexels](https://www.pexels.com/api/) key in **Brand** and b-roll cutaways use real footage that matches what you say, with animated backgrounds as the fallback.
-- **Templates.** 17 ready-made videos (Quick Cuts, Day in My Life, Photo Dump, Product Showcase, Before & After, Top 3, Travel Film, Movie Trailer, Fitness Pump, Recipe Steps and more). Drop in clips, change the words, tap Create. Empty slots get an animated background. The result is a normal project you can keep editing.
+- **Templates.** 43 ready-made videos with live animated previews (Quick Cuts, Day in My Life, Photo Dump, Product Showcase, Before & After, Top 3, Travel Film, Movie Trailer, Fitness Pump, Recipe Steps and more). Drop in clips, change the words, tap Create. Empty slots get an animated background. The result is a normal project you can keep editing.
 - **Brand.** Name, handle, colours, font, logo, default caption look and music, end card. Everything above uses it. It is stored on your device, with a JSON backup you can download.
 
 Tests for the planning logic and template catalog: `node tests/web/autoedit.test.mjs` and `node tests/web/templates.test.mjs`.
@@ -46,10 +46,10 @@ Tests for the planning logic and template catalog: `node tests/web/autoedit.test
 - **Multi-track timeline** with video, overlay, text, effect and audio tracks. Drag, trim, split, duplicate, snap, pinch-to-zoom, unlimited undo and redo, copy and paste, and ripple delete.
 - **Preview you can touch**: tap an item in the preview to select it, drag to move, pull the corner to scale, use the top handle to rotate, or pinch and twist with two fingers.
 - **47 effects**: glitch, VHS, RGB split, blur, zoom, shake, film, light leaks, distortion, stylise and more. Apply to one clip or as an effect layer over everything beneath it.
-- **40 transitions**: crossfade, slides, wipes, zooms, spins, glitch, ripple, doors, shapes and more, with adjustable length.
+- **59 transitions**: crossfade, slides, wipes, zooms, spins, glitch, ripple, doors, shapes and more, with adjustable length.
 - **26 colour looks** plus full manual grading (exposure, contrast, saturation, vibrance, temperature, tint, hue, highlights, shadows, sharpen, vignette, grain).
-- **58 B-roll backgrounds in 15 genres** (Nature, City, Tech, Space, Lifestyle, Food, Music, Gaming, Fitness, Cinematic, Education, Travel, Romance, Dark, Fun). They are drawn live in any aspect ratio, so they are royalty-free and tiny.
-- **Music and sound**: upload your own background music (MP3, WAV, M4A), or use 12 original built-in tracks and 16 sound effects. Volume, fades, looping, auto-ducking under speech, and loudness normalisation on export.
+- **79 B-roll backgrounds in 15 genres** (Nature, City, Tech, Space, Lifestyle, Food, Music, Gaming, Fitness, Cinematic, Education, Travel, Romance, Dark, Fun). They are drawn live in any aspect ratio, so they are royalty-free and tiny.
+- **Music and sound**: upload your own background music (MP3, WAV, M4A), or use 26 original built-in tracks and 28 sound effects. Volume, fades, looping, auto-ducking under speech, and loudness normalisation on export.
 - **Text and stickers**: 14 text styles, 18 fonts, outline, glow, shadow, background box, animated in/out, typewriter, plus emoji and shape stickers.
 - **Keyframes** for position, scale, rotation and opacity; speed from 0.25x to 4x; masks, chroma key (green screen), blend modes, crop, flip, picture-in-picture.
 - **Edit for me (one click)**: pick a video and press one button. Eden cuts dead air (the threshold adapts to how loud your recording is), removes "um" / "uh" and stutters, adds word-by-word captions in one of 12 looks, mixes a quiet music track that fades and ducks under your voice, drops in b-roll cutaways with keyword cards, and applies your brand. Everything stays editable afterwards in the full editor.
