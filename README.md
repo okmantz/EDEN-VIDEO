@@ -1,6 +1,58 @@
 # EDEN VIDEO
 
-**A Professional Video Editing Software**
+Two editions live in this repo:
+
+| | **EDEN Studio (web)** | **Server edition** |
+|---|---|---|
+| What it is | A full multi-track video editor that runs in the browser, in the style of CapCut | The original Python + FFmpeg auto-editor |
+| Where it runs | **GitHub Pages**, on any computer, phone or tablet. Nothing to install | Your own computer (download or run from source) |
+| Best for | Hands-on editing, effects, transitions, music, text, mobile | Hands-free automatic edits of long recordings (Whisper transcripts) |
+| Code | [`docs/`](docs) | [`eden/`](eden) and everything else |
+
+## EDEN Studio (web)
+
+**Live site:** `https://<your-github-username>.github.io/<repo-name>/`
+
+### Turn it on (one time, about a minute)
+
+1. Push this repo to GitHub.
+2. Open **Settings → Pages**.
+3. Under **Build and deployment**, set **Source** to **Deploy from a branch**, **Branch** to `main`, folder to **`/docs`**, then **Save**.
+4. Wait a minute, then open the link GitHub shows at the top of that page.
+5. On your phone, open the link and choose **Add to Home Screen** (iPhone: Share → Add to Home Screen; Android: menu → Install app). It then opens full screen like a native app and works offline.
+
+### What's inside
+
+- **Multi-track timeline** with video, overlay, text, effect and audio tracks. Drag, trim, split, duplicate, snap, pinch-to-zoom, unlimited undo and redo, copy and paste, and ripple delete.
+- **Preview you can touch**: tap an item in the preview to select it, drag to move, pull the corner to scale, use the top handle to rotate, or pinch and twist with two fingers.
+- **47 effects**: glitch, VHS, RGB split, blur, zoom, shake, film, light leaks, distortion, stylise and more. Apply to one clip or as an effect layer over everything beneath it.
+- **40 transitions**: crossfade, slides, wipes, zooms, spins, glitch, ripple, doors, shapes and more, with adjustable length.
+- **26 colour looks** plus full manual grading (exposure, contrast, saturation, vibrance, temperature, tint, hue, highlights, shadows, sharpen, vignette, grain).
+- **58 B-roll backgrounds in 15 genres** (Nature, City, Tech, Space, Lifestyle, Food, Music, Gaming, Fitness, Cinematic, Education, Travel, Romance, Dark, Fun). They are drawn live in any aspect ratio, so they are royalty-free and tiny.
+- **Music and sound**: upload your own background music (MP3, WAV, M4A), or use 12 original built-in tracks and 16 sound effects. Volume, fades, looping, auto-ducking under speech, and loudness normalisation on export.
+- **Text and stickers**: 14 text styles, 18 fonts, outline, glow, shadow, background box, animated in/out, typewriter, plus emoji and shape stickers.
+- **Keyframes** for position, scale, rotation and opacity; speed from 0.25x to 4x; masks, chroma key (green screen), blend modes, crop, flip, picture-in-picture.
+- **Captions**: import `.srt` / `.vtt`, or paste lines. **Remove silences** automatically from a clip.
+- **Export** to MP4 (H.264) up to 4K at 24, 30 or 60 fps, rendered on your own device. Share straight from your phone.
+- **Private**: your files never leave your device. Projects autosave locally in your browser.
+
+### Good to know
+
+- Needs a recent browser: Chrome, Edge, Safari 16.4+ or Firefox. Fast export uses WebCodecs; if a browser lacks it, EDEN falls back to a real-time recording (keep the tab open).
+- Projects and imported media are stored in your browser. Clearing site data deletes them, so export finished videos.
+- Very large 4K files and long timelines work best on a computer; phones are great for short-form edits.
+- The built-in music is generated on first use (a few seconds) and cached afterwards.
+- It does not do automatic speech-to-text. Use the server edition for Whisper captions, or import an `.srt`.
+
+### Run it locally
+
+Any static server works, for example `cd docs && python3 -m http.server 8000`, then open <http://localhost:8000>. Modules and the service worker need `http://`, not `file://`.
+
+---
+
+## EDEN VIDEO Server Edition (Python + FFmpeg)
+
+**Automatic one-click editing: silence and filler removal, Whisper captions, B-roll, per-platform exports**
 
 Upload a short clip or a long recording and get a finished edit for Instagram, TikTok, Facebook and YouTube. Eden cuts the silence and the "ums", adds styled captions, drops in B-roll cutaways, reframes to each platform's aspect ratio and exports one polished file per platform.
 
