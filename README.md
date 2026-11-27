@@ -30,6 +30,17 @@ It then opens full screen and works offline. Your projects and media stay on you
 
 **Updates:** the app checks for a new version each time it opens. When one is ready, a message appears; tap **Reload** to switch to it.
 
+### Edit for me, templates and your brand
+
+The web app opens on four tabs: **Home**, **Templates**, **Projects** and **Brand**.
+
+- **Edit for me.** Drop in a video and pick a style (Viral Short, Authority, Clean Pro, Podcast, Cinematic). It cuts dead air, "um"s, stutters and false starts without clipping words, adds word-timed captions in 19 caption looks, mixes quiet music that ducks under your voice, adds b-roll, and applies your brand. **Fine-tune** exposes pacing, caption look, position and size, music, b-roll amount, colour grade, end card and format. Captions use Whisper in the browser: it downloads once, so be online the first time, or import an `.srt` instead.
+- **Real stock b-roll (optional).** Paste a free [Pexels](https://www.pexels.com/api/) key in **Brand** and b-roll cutaways use real footage that matches what you say, with animated backgrounds as the fallback.
+- **Templates.** 17 ready-made videos (Quick Cuts, Day in My Life, Photo Dump, Product Showcase, Before & After, Top 3, Travel Film, Movie Trailer, Fitness Pump, Recipe Steps and more). Drop in clips, change the words, tap Create. Empty slots get an animated background. The result is a normal project you can keep editing.
+- **Brand.** Name, handle, colours, font, logo, default caption look and music, end card. Everything above uses it. It is stored on your device, with a JSON backup you can download.
+
+Tests for the planning logic and template catalog: `node tests/web/autoedit.test.mjs` and `node tests/web/templates.test.mjs`.
+
 ### What's inside
 
 - **Multi-track timeline** with video, overlay, text, effect and audio tracks. Drag, trim, split, duplicate, snap, pinch-to-zoom, unlimited undo and redo, copy and paste, and ripple delete.
