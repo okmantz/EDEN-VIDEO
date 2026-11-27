@@ -1,38 +1,66 @@
 // EDEN Studio — application shell: home screen, editor wiring, import/export, shortcuts, PWA.
-import { h, clamp, fmtTime, fmtDur, fmtBytes, downloadBlob, safeName, isMobile, debounce, EASE, deep } from './util.js';
+import { h, clamp, fmtTime, fmtDur, fmtBytes, downloadBlob, safeName, isMobile, debounce, EASE, deep, uid } from './util.js';
 import { Store } from './state.js';
 import { AudioBank, builtinMedia } from './audio.js';
 import { MediaLibrary, Storage } from './media.js';
 import { Engine } from './engine.js';
 import { loadFonts, mergeText, TEXT_PRESETS } from './textrender.js';
 import { RATIOS, end, findClip, projectDuration, videoClip, textClip, overlaps } from './model.js';
-import { effectDefaults, transitionById } from './effects.js';
+import { effectDefaults, transitionById, EFFECTS, TRANSITIONS, FILTERS } from './effects.js';
 import { exportWebCodecs, exportRealtime, capabilities, RESOLUTIONS, outputSize } from './export.js';
-import { icon } from './ui/icons.js';
+import { icon, logoMark } from './ui/icons.js';
 import { Panels, TOOLS } from './ui/panels.js';
 import { Inspector, slider } from './ui/inspector.js';
 import { Timeline } from './ui/timeline.js';
 import { PreviewOverlay } from './ui/preview.js';
 import { destroyThumbs } from './thumbs.js';
-import { MUSIC } from './synth.js';
+import { MUSIC, SFX } from './synth.js';
+import { GENERATORS } from './generators.js';
 
 const $ = (id) => document.getElementById(id);
-function toast(msg, kind = '', ms = 2600) {
-  const t = h('div.toast' + (kind ? '.' + kind : ''), msg);
+const MEDIA_ACCEPT = 'video/*,image/*,audio/*,.mp4,.mov,.m4v,.webm,.mp3,.wav,.m4a';
+
+/** Small message at the top of the screen. `action` = { label, fn } adds a button. */
+function toast(msg, kind = '', ms = 2600, action = null) {
+  const t = h('div.toast' + (kind ? '.' + kind : ''), icon(kind === 'ok' ? 'check' : 'info', 17), h('span', String(msg)),
+    action ? h('button.act', { on: { click: () => { action.fn(); t.remove(); } } }, action.label) : null);
   $('toasts').append(t);
   setTimeout(() => { t.style.transition = 'opacity .3s'; t.style.opacity = 0; setTimeout(() => t.remove(), 320); }, ms);
+  return t;
 }
 window.EDEN = { toast };
 
-function modal({ title, lead, body, actions = [], dismiss = true, wide = false }) {
-  const back = h('div.modal-back');
-  const close = () => back.remove();
-  const box = h('div.modal', wide ? { style: { width: 'min(640px,100%)' } } : null, h('h3', title), lead ? h('p.lead', lead) : null, body || null,
+/** Dialog. On phones it slides up as a bottom sheet. Esc / tapping outside closes it (unless dismiss:false). */
+function modal({ title, lead, body, actions = [], dismiss = true, wide = false, onClose }) {
+  const back = h('div.modal-back', { role: 'dialog', 'aria-modal': 'true', 'aria-label': title });
+  const prev = document.activeElement;
+  const onKey = (e) => { if (e.key === 'Escape' && dismiss) { e.stopPropagation(); close(); } };
+  const close = () => { document.removeEventListener('keydown', onKey, true); back.remove(); try { prev?.focus?.({ preventScroll: true }); } catch {} onClose?.(); };
+  const box = h('div.modal' + (wide ? '.wide' : ''), h('h3', title), lead ? h('p.lead', lead) : null, body || null,
     actions.length ? h('div.foot', actions.map((a) => h('button.btn' + (a.primary ? '.primary' : a.ghost ? '.ghost' : '') + (a.danger ? '.danger' : ''), { on: { click: async () => { if (a.onClick) { const r = await a.onClick(close); if (r === false) return; } if (!a.keep) close(); } } }, a.label))) : null);
   back.append(box);
   if (dismiss) back.addEventListener('pointerdown', (e) => { if (e.target === back) close(); });
+  document.addEventListener('keydown', onKey, true);
   document.body.append(back);
+  if (!matchMedia('(pointer:coarse)').matches) setTimeout(() => (box.querySelector('input.field,textarea.field') || box.querySelector('.btn.primary'))?.focus?.({ preventScroll: true }), 40);
   return { close, box, back };
+}
+
+// ---- install support (must be wired before the browser fires the event)
+let deferredInstall = null;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredInstall = e; window.dispatchEvent(new Event('eden-install-state')); });
+window.addEventListener('appinstalled', () => { deferredInstall = null; window.dispatchEvent(new Event('eden-install-state')); toast('EDEN Studio installed', 'ok'); });
+const isStandalone = () => ['standalone', 'fullscreen', 'minimal-ui'].some((m) => matchMedia(`(display-mode: ${m})`).matches) || navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isAndroid = () => /android/i.test(navigator.userAgent);
+
+function ago(ts) {
+  const s = Math.max(0, (Date.now() - ts) / 1000);
+  if (s < 60) return 'Just now';
+  if (s < 3600) return Math.floor(s / 60) + ' min ago';
+  if (s < 86400) return Math.floor(s / 3600) + ' h ago';
+  if (s < 172800) return 'Yesterday';
+  return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: s > 31536000 ? 'numeric' : undefined });
 }
 
 class App {
@@ -52,60 +80,185 @@ class App {
   async start() {
     await Promise.race([loadFonts([{ id: 'Inter', w: 600 }, { id: 'Inter', w: 800 }, { id: 'Montserrat', w: 800 }]), new Promise((r) => setTimeout(r, 1500))]);
     this.buildEditorShell();
-    window.addEventListener('resize', debounce(() => { this.isMobile = isMobile(); this.fitCanvas(); this.renderRail(); }, 100));
+    window.addEventListener('resize', debounce(() => { this.isMobile = isMobile(); this.fitCanvas(); if (!$('editor').hidden) this.renderRail(); }, 100));
     window.addEventListener('keydown', (e) => this.onKey(e));
     window.addEventListener('beforeunload', () => this.store.flush());
     document.addEventListener('visibilitychange', () => { if (document.hidden) { this.store.flush(); this.engine?.pause(); } });
     window.addEventListener('dragover', (e) => e.preventDefault());
-    window.addEventListener('drop', (e) => { if (!this.store.project) return; e.preventDefault(); if (e.dataTransfer?.files?.length) this.importFiles([...e.dataTransfer.files]); });
+    window.addEventListener('drop', (e) => { if (!this.store.project || $('editor').hidden) return; e.preventDefault(); if (e.dataTransfer?.files?.length) this.importFiles([...e.dataTransfer.files]); });
+    window.addEventListener('popstate', () => this.onPop());
+    window.addEventListener('online', () => this.refreshStatus());
+    window.addEventListener('offline', () => { this.refreshStatus(); toast('You are offline. EDEN keeps working.'); });
     await this.showHome();
     $('loading').classList.add('gone'); setTimeout(() => $('loading').remove(), 600);
     Storage.persist();
-    if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
+    this.registerSW();
+    // Home-screen shortcut: "New project" opens the new-project dialog straight away.
+    if (new URLSearchParams(location.search).get('new')) { history.replaceState(null, '', location.pathname); this.newProjectDialog(); }
+  }
+
+  registerSW() {
+    if (!('serviceWorker' in navigator) || !location.protocol.startsWith('http')) return;
+    const had = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register('sw.js').then((reg) => { reg.update?.().catch(() => {}); }).catch(() => {});
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (this._reloading) return;
+      this.refreshStatus();
+      if (had) toast('A new version of EDEN Studio is ready', 'ok', 15000, { label: 'Reload', fn: () => { this._reloading = true; this.store.flush(); setTimeout(() => location.reload(), 150); } });
+    });
+  }
+
+  refreshStatus() {
+    const el = this.statusRow; if (!el) return;
+    const ready = !!navigator.serviceWorker?.controller;
+    el.replaceChildren(
+      h('span.dot' + (navigator.onLine ? '.ok' : ''), navigator.onLine ? 'Online' : 'Offline'),
+      h('span.dot' + (ready ? '.ok' : ''), ready ? 'Ready to use offline' : 'Preparing offline mode…'));
   }
 
   // ------------------------------------------------------------ home
   async showHome() {
     if (this.engine) { this.engine.pause(); }
+    document.title = 'EDEN Studio — Pro video editor in your browser';
     const home = $('home'); $('editor').hidden = true; home.hidden = false;
-    const list = await Storage.listProjects().catch(() => []);
-    const est = await Storage.estimate();
-    const cards = list.map((p) => h('div.pcard', { tabindex: 0, on: { click: () => this.openProject(p.id), keydown: (e) => { if (e.key === 'Enter') this.openProject(p.id); } } },
-      h('div.th', { style: p.thumb ? { backgroundImage: `url(${p.thumb})` } : null }, p.thumb ? null : icon('media', 30)),
-      h('button.del', { title: 'Delete project', on: { click: (e) => { e.stopPropagation(); this.confirmDelete(p); } } }, icon('trash', 15)),
-      h('div.meta', h('b', p.name), h('span', `${p.ratio} · ${p.duration ? fmtDur(p.duration) : 'empty'} · ${new Date(p.updated).toLocaleDateString()}`))));
-    home.replaceChildren(h('div.home-in',
-      h('div.brand', h('div.logo', icon('play', 18)), 'EDEN STUDIO'),
-      h('div.hero', h('h1', 'Edit like a pro.', h('br'), h('em', 'Right in your browser.')),
-        h('p', 'A full multi-track video editor with effects, transitions, music, captions and 4K export. Private by design: your files never leave your device.'),
-        h('div.row', h('button.btn.primary', { on: { click: () => this.newProjectDialog() } }, icon('plus', 20), 'New project'),
-          this.installBtn = h('button.btn', { hidden: true, on: { click: () => this.install() } }, icon('upload', 18), 'Install app'))),
-      h('div.feat', ...[['47', 'Effects'], ['40', 'Transitions'], ['58', 'B-roll loops'], ['12', 'Music tracks']].map(([n, t]) => h('div', h('b', n), t))),
-      h('h2.sec', 'Your projects'),
-      cards.length ? h('div.projects', cards) : h('div.empty', 'No projects yet. Create one to get started.'),
-      est?.quota ? h('div.hint', { style: { marginTop: '24px' } }, `Local storage used: ${fmtBytes(est.usage || 0)} of ${fmtBytes(est.quota)}`) : null));
-    window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); this._installEv = e; if (this.installBtn) this.installBtn.hidden = false; }, { once: true });
-    if (this._installEv && this.installBtn) this.installBtn.hidden = false;
+    const [list, est] = await Promise.all([Storage.listProjects().catch(() => []), Storage.estimate()]);
+    const open = (p) => this.openProject(p.id);
+    const cards = list.map((p) => h('div.pcard', { tabindex: 0, role: 'button', 'aria-label': 'Open ' + p.name, on: { click: () => open(p), keydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(p); } } } },
+      h('div.th', { style: p.thumb ? `--img:url("${p.thumb}")` : '' }, p.thumb ? h('div.pic') : icon('film', 30, 'ph-ic'), h('span.badge', p.duration ? fmtDur(p.duration) : 'Empty'), h('span.badge.r', p.ratio)),
+      h('button.more', { title: 'Project options', on: { click: (e) => { e.stopPropagation(); this.projectMenu(p, e); } } }, icon('dots', 16)),
+      h('div.meta', h('b', p.name), h('span', 'Edited ' + ago(p.updated)))));
+    this.startPick = h('input', { type: 'file', accept: MEDIA_ACCEPT, multiple: true, hidden: true, on: { change: (e) => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) this.startFromFiles(fs); } } });
+    this.installBtn = h('button.btn.sm', { title: 'Install EDEN Studio', on: { click: () => this.install() } }, icon('download', 16), h('span', 'Install'));
+    this.installCard = h('div.install-card', h('div.ci', icon('phone', 22)), h('div', h('b', 'Install EDEN Studio'), h('span', 'Add it to your home screen for a full-screen app that works offline.')), h('button.btn.primary.sm', { on: { click: () => this.install() } }, 'Install'));
+    this.statusRow = h('div.status-row');
+    const k = 44;
+    const fmtCards = RATIOS.map((r) => { const f = k / Math.max(r.w, r.h); return h('button.fmt', { on: { click: () => this.createProject(r.id, 'My video') } }, h('div.frame', h('i', { style: { width: Math.round(r.w * f) + 'px', height: Math.round(r.h * f) + 'px' } })), h('div', h('b', r.name), h('small', r.sub))); });
+    const newCard = h('button.pcard.new', { on: { click: () => this.newProjectDialog() } }, h('div', h('div.plus', icon('plus', 22)), h('b', 'New project')));
+    const row = (a, b, c) => h('div', ...[a, b, c].map(([f, w, col]) => h('b', { style: `flex:${f};--c:${col}` })));
+    const caps = [
+      ['layers', 'Multi-track timeline', 'Video, overlays, text, effects and audio with snapping and unlimited undo.'],
+      ['effects', `${EFFECTS.length} effects · ${TRANSITIONS.length} transitions`, `Glitch, VHS, light leaks, wipes, zooms and ${FILTERS.length - 1} colour looks.`],
+      ['audio', 'Music & sound', `${MUSIC.length} original tracks and ${SFX.length} sound effects, with auto-ducking.`],
+      ['export', '4K export', 'H.264 MP4 up to 4K, rendered on your device and shared in one tap.'],
+    ];
+    home.replaceChildren(this.startPick, h('div.home-in',
+      h('div.home-nav', h('div.brand', logoMark(34), h('b', 'EDEN'), h('span', 'STUDIO')), h('div.sp'), this.installBtn,
+        h('button.btn.ghost.icon', { title: 'Help and shortcuts', on: { click: () => this.helpDialog() } }, icon('help', 21))),
+      h('section.hero',
+        h('div.hero-copy',
+          h('span.eyebrow', h('i'), 'Free · Private · Works offline'),
+          h('h1', 'Pro video editing,', h('br'), h('em', 'right in your browser.')),
+          h('p', 'A full multi-track editor with effects, transitions, music, captions and 4K export. Your files never leave your device.'),
+          h('div.row', h('button.btn.primary.lg', { on: { click: () => this.newProjectDialog() } }, icon('plus', 20), 'New project'),
+            h('button.btn.lg', { on: { click: () => this.startPick.click() } }, icon('upload', 19), 'Start from a video')),
+          h('div.trust', h('span', icon('shield', 16), 'Files stay on your device'), h('span', icon('bolt', 16), 'Exports in seconds'), h('span', icon('cloudoff', 16), 'Works offline'))),
+        h('div.hero-art', { 'aria-hidden': 'true' }, h('div.mock-phone', h('i')),
+          h('div.mock-tl', row([3, 0, '#3b5a86'], [2, 0, '#4b3a72'], [3, 0, '#2c6b6b']), row([2, 0, '#7a6417'], [4, 0, '#2d4a6e'], [1, 0, '#7a2e58'])))),
+      this.installCard,
+      h('h2.sec', 'Start with a format'), h('div.formats', fmtCards),
+      h('h2.sec', 'Your projects', list.length ? h('span.count', list.length) : null),
+      list.length ? h('div.projects', newCard, cards)
+        : h('div.empty.big', h('div.em-ic', icon('film', 24)), h('b', 'No projects yet'), h('p', 'Pick a format above or start from a video. Projects save automatically on this device.')),
+      h('h2.sec', 'What’s inside'), h('div.caps', caps.map(([ic, t, d]) => h('div.cap', h('div.ci', icon(ic, 19)), h('b', t), h('span', d)))),
+      h('footer.home-foot',
+        est?.quota ? h('div', h('div', `Local storage: ${fmtBytes(est.usage || 0)} used of ${fmtBytes(est.quota)}`), h('div.meter', h('i', { style: { width: Math.max(1, Math.min(100, ((est.usage || 0) / est.quota) * 100)) + '%' } })),
+          h('div', { style: { marginTop: '8px', color: 'var(--mute)' } }, 'Projects and media live in this browser. Clearing site data deletes them, so export videos you want to keep.')) : null,
+        this.statusRow)));
+    this.refreshStatus();
+    this.updateInstallUI();
+    if (this._instHandler) window.removeEventListener('eden-install-state', this._instHandler);
+    this._instHandler = () => this.updateInstallUI();
+    window.addEventListener('eden-install-state', this._instHandler);
+    home.scrollTop = 0;
   }
-  async install() { const e = this._installEv; if (!e) return; e.prompt(); await e.userChoice; this._installEv = null; this.installBtn.hidden = true; }
+
+  updateInstallUI() {
+    const standalone = isStandalone();
+    if (this.installBtn) this.installBtn.hidden = standalone;
+    if (this.installCard) this.installCard.hidden = standalone || !(deferredInstall || isIOS() || isAndroid());
+  }
+  async install() {
+    if (isStandalone()) return;
+    const e = deferredInstall;
+    if (e) { deferredInstall = null; e.prompt(); try { await e.userChoice; } catch {} this.updateInstallUI(); return; }
+    this.installHelp();
+  }
+  installHelp() {
+    const ios = isIOS(), android = isAndroid();
+    const steps = ios
+      ? [['Tap the ', h('b', 'Share'), ' button', ' in Safari’s toolbar.'], ['Scroll down and tap ', h('b', 'Add to Home Screen'), '.'], ['Tap ', h('b', 'Add'), '. EDEN Studio now opens full screen like an app.']]
+      : android
+        ? [['Open the browser menu ', h('b', '⋮'), ' (top right).'], ['Tap ', h('b', 'Install app'), ' or ', h('b', 'Add to Home screen'), '.'], ['Confirm. EDEN Studio appears with your other apps.']]
+        : [['Look for the ', h('b', 'install icon'), ' at the right end of the address bar, or open the browser menu.'], ['Choose ', h('b', 'Install EDEN Studio'), '.'], ['It opens in its own window and works offline.']];
+    modal({ title: 'Install EDEN Studio', lead: ios ? 'On iPhone and iPad, installing is done from Safari.' : 'Installing gives you a full-screen app that also works offline.',
+      body: h('ol.guide-list', steps.map((s) => h('li', h('span', ...s)))), actions: [{ label: 'Got it', primary: true }] });
+  }
 
   newProjectDialog() {
     let ratio = '9:16';
     const grid = h('div.ratio-grid');
     const draw = () => grid.replaceChildren(...RATIOS.map((r) => { const k = 34 / Math.max(r.w, r.h); return h('button.ratio' + (ratio === r.id ? '.on' : ''), { on: { click: () => { ratio = r.id; draw(); } } }, h('i', { style: { width: Math.round(r.w * k) + 'px', height: Math.round(r.h * k) + 'px' } }), r.name, h('small', r.sub)); }));
     draw();
-    const name = h('input.field', { placeholder: 'Project name', value: 'My video' });
-    modal({ title: 'New project', lead: 'Pick a canvas. You can change it any time.', body: h('div', name, h('div', { style: { height: '14px' } }), grid),
+    const name = h('input.field', { placeholder: 'Project name', value: 'My video', maxLength: 80, 'aria-label': 'Project name' });
+    const m = modal({ title: 'New project', lead: 'Pick a canvas. You can change it any time.', body: h('div', name, h('div', { style: { height: '14px' } }), grid),
       actions: [{ label: 'Cancel', ghost: true }, { label: 'Create', primary: true, onClick: async () => { await this.createProject(ratio, name.value.trim() || 'My video'); } }] });
+    name.addEventListener('keydown', (e) => { if (e.key === 'Enter') m.box.querySelector('.btn.primary')?.click(); });
+  }
+
+  projectMenu(p, e) {
+    const r = e.currentTarget.getBoundingClientRect();
+    this.menu(r.right - 210, r.bottom + 6, [
+      { label: 'Open', icon: 'play', fn: () => this.openProject(p.id) },
+      { label: 'Rename', icon: 'pen', fn: () => this.renameProject(p) },
+      { label: 'Duplicate', icon: 'copy', fn: () => this.duplicateProject(p) }, '-',
+      { label: 'Delete', icon: 'trash', danger: true, fn: () => this.confirmDelete(p) }]);
+  }
+  renameProject(p) {
+    const input = h('input.field', { value: p.name, maxLength: 80, 'aria-label': 'Project name' });
+    const m = modal({ title: 'Rename project', body: input, actions: [{ label: 'Cancel', ghost: true }, { label: 'Save', primary: true, onClick: async () => {
+      const name = input.value.trim(); if (!name) return false;
+      const full = await Storage.loadProject(p.id);
+      if (full) { full.name = name; await Storage.saveProject(full, { thumb: p.thumb, duration: p.duration }); }
+      this.showHome();
+    } }] });
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') m.box.querySelector('.btn.primary')?.click(); });
+    setTimeout(() => input.select(), 60);
+  }
+  async duplicateProject(meta) {
+    try {
+      const p = await Storage.loadProject(meta.id); if (!p) throw new Error('missing');
+      const np = deep(p); np.id = uid('prj'); np.name = (p.name + ' copy').slice(0, 80); np.created = np.updated = Date.now();
+      let json = JSON.stringify(np);
+      for (const m of Object.values(p.media || {})) {
+        if (m.builtin) continue;
+        const blob = await Storage.getBlob(m.id); if (!blob) continue;
+        const nid = uid('med'); await Storage.putBlob(nid, np.id, blob, m.name);
+        json = json.split(m.id).join(nid);
+      }
+      await Storage.saveProject(JSON.parse(json), { thumb: meta.thumb, duration: meta.duration });
+      toast('Project duplicated', 'ok'); this.showHome();
+    } catch (e) { console.error(e); toast('Could not duplicate that project', 'err'); }
   }
 
   confirmDelete(p) {
-    modal({ title: 'Delete project?', lead: `“${p.name}” and its imported media will be removed from this device.`, actions: [{ label: 'Cancel', ghost: true }, { label: 'Delete', danger: true, onClick: async () => { await Storage.deleteProject(p.id); this.showHome(); } }] });
+    modal({ title: 'Delete project?', lead: `“${p.name}” and its imported media will be removed from this device. This can’t be undone.`, actions: [{ label: 'Cancel', ghost: true }, { label: 'Delete', primary: true, danger: true, onClick: async () => { await Storage.deleteProject(p.id); toast('Project deleted'); this.showHome(); } }] });
   }
 
   async createProject(ratio, name) {
     const p = this.store.create(ratio, name);
     await this.enterEditor(p, true);
+  }
+  /** One-tap start: make a project from the files the user picked and match the canvas to the first video. */
+  async startFromFiles(files) {
+    const first = files[0];
+    await this.createProject('9:16', first.name.replace(/\.[^.]+$/, '').slice(0, 60) || 'My video');
+    await this.importFiles(files);
+    const m = Object.values(this.store.project.media).find((x) => x.kind !== 'audio' && x.w && x.h);
+    if (m) {
+      const id = m.w > m.h * 1.15 ? '16:9' : m.h > m.w * 1.15 ? '9:16' : '1:1';
+      const R = RATIOS.find((x) => x.id === id);
+      if (R && id !== this.store.project.canvas.ratio) { this.store.setCanvas(R.id, R.w, R.h); this.store.undoStack.length = 0; this.updateUndo(); this.timeline.fit(); }
+    }
   }
   async openProject(id) {
     const p = await Storage.loadProject(id);
@@ -117,29 +270,87 @@ class App {
   // ------------------------------------------------------------ editor shell (built once)
   buildEditorShell() {
     // top bar
-    this.titleInput = h('input.title', { 'aria-label': 'Project name', on: { change: (e) => this.store.rename(e.target.value), keydown: (e) => { if (e.key === 'Enter') e.target.blur(); } } });
-    this.saveState = h('span.savestate.desktop-only', '');
+    this.titleInput = h('input.title', { 'aria-label': 'Project name', spellcheck: false, on: { change: (e) => this.store.rename(e.target.value), keydown: (e) => { if (e.key === 'Enter') e.target.blur(); } } });
+    this.saveState = h('span.savestate', 'Saved');
     this.undoBtn = h('button.btn.ghost.icon', { title: 'Undo (Ctrl+Z)', on: { click: () => this.store.undo() } }, icon('undo', 20));
     this.redoBtn = h('button.btn.ghost.icon', { title: 'Redo (Ctrl+Shift+Z)', on: { click: () => this.store.redo() } }, icon('redo', 20));
-    this.ratioBtn = h('button.btn.ghost.sm', { title: 'Canvas', on: { click: () => this.openTool('canvas') } }, icon('ratio', 16), h('span'));
+    this.ratioBtn = h('button.btn.ghost.sm.ratio-btn', { title: 'Canvas size', on: { click: () => this.openTool('canvas') } }, icon('ratio', 16), h('span'));
     $('topbar').append(
-      h('button.btn.ghost.icon', { title: 'Projects', on: { click: () => this.goHome() } }, icon('home', 20)),
-      h('div.name', this.titleInput, this.saveState),
-      this.ratioBtn, this.undoBtn, this.redoBtn,
-      h('button.btn.primary.export', { on: { click: () => this.exportDialog() } }, icon('export', 18), h('span', 'Export')));
+      h('button.btn.ghost.icon', { title: 'Back to projects', on: { click: () => this.goHome() } }, icon('back', 22)),
+      h('div.name', h('div.title-wrap', this.titleInput, this.saveState)),
+      this.ratioBtn, h('div.vsep'), this.undoBtn, this.redoBtn,
+      h('button.btn.ghost.icon.desktop-only', { title: 'Help and shortcuts (?)', on: { click: () => this.helpDialog() } }, icon('help', 20)),
+      h('button.btn.primary.export', { title: 'Export video', on: { click: () => this.exportDialog() } }, icon('export', 18), h('span', 'Export')));
     // transport
     this.timeEl = h('div.time');
     this.playBtn = h('button.playbtn', { title: 'Play / Pause (Space)', on: { click: () => this.engine.toggle() } }, icon('play', 22));
-    this.loopBtn = h('button.btn.ghost.icon.sm.desktop-only', { title: 'Loop', on: { click: () => { this.engine.loop = !this.engine.loop; this.loopBtn.style.color = this.engine.loop ? 'var(--accent)' : ''; } } }, icon('loopmode', 18));
-    $('transport').append(this.timeEl, h('div.sp'),
-      h('button.btn.ghost.icon.sm', { title: 'Back to start', on: { click: () => this.engine.seek(0) } }, icon('skipback', 18)), this.playBtn, h('div.sp'), this.loopBtn,
-      h('button.btn.ghost.icon.sm', { title: 'Fullscreen preview', on: { click: () => this.fullscreen() } }, icon('fullscreen', 18)));
+    this.loopBtn = h('button.btn.ghost.icon.sm.desktop-only', { title: 'Loop playback', on: { click: () => { this.engine.loop = !this.engine.loop; this.loopBtn.style.color = this.engine.loop ? 'var(--accent)' : ''; } } }, icon('loopmode', 18));
+    $('transport').append(
+      h('div.tl', this.timeEl),
+      h('div.tm', h('button.btn.ghost.icon.sm', { title: 'Back to start (Home)', on: { click: () => this.engine.seek(0) } }, icon('skipback', 18)), this.playBtn,
+        h('button.btn.ghost.icon.sm', { title: 'Jump to end (End)', on: { click: () => this.engine.seek(this.engine.duration) } }, icon('skipend', 18))),
+      h('div.tr', this.loopBtn, h('button.btn.ghost.icon.sm', { title: 'Fullscreen preview', on: { click: () => this.fullscreen() } }, icon('fullscreen', 18))));
     $('panelClose').append(icon('close', 18)); $('inspClose').append(icon('close', 18));
     $('panelClose').addEventListener('click', () => this.closeSheets());
     $('inspClose').addEventListener('click', () => this.closeSheets());
     $('scrim').addEventListener('click', () => this.closeSheets());
     for (const g of ['panelGrab', 'inspGrab']) this.swipeDown($(g), () => this.closeSheets());
     new ResizeObserver(() => this.fitCanvas()).observe($('viewport'));
+  }
+
+  /** The card shown over the preview until the first clip exists. */
+  updateStageEmpty() {
+    const el = $('stageEmpty'), p = this.store.project; if (!el || !p) return;
+    const show = p.tracks.every((t) => !t.clips.length);
+    if (show === !el.hidden) return;
+    el.hidden = !show;
+    if (!show) return;
+    el.replaceChildren(h('div.empty-card',
+      h('div.em-ic', icon('film', 26)), h('h3', 'Start your video'),
+      h('p', 'Add footage from this device, or begin with an animated background.'),
+      h('button.btn.primary.lg', { on: { click: () => this.pickFiles() } }, icon('upload', 19), 'Import video, photos or audio'),
+      h('div.alt', h('button.btn', { on: { click: () => this.openTool('broll') } }, icon('broll', 17), 'B-roll'), h('button.btn', { on: { click: () => { this.store.addText({}); if (this.isMobile) this.openInspector('text'); } } }, icon('text', 17), 'Add text')),
+      h('div.tip', this.isMobile ? 'Tip: tap a clip to edit it. Pinch the timeline to zoom.' : 'Tip: drag files anywhere onto the editor to import them.')));
+  }
+
+  /** Open the system file picker straight away (used by "+" buttons). */
+  pickFiles() {
+    if (!this.filePick) { this.filePick = h('input', { type: 'file', accept: MEDIA_ACCEPT, multiple: true, hidden: true, on: { change: (e) => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) this.importFiles(fs); } } }); document.body.append(this.filePick); }
+    this.filePick.click();
+  }
+
+  setSave(state) {
+    this.saveState.className = 'savestate' + (state === 'saving' ? ' saving' : state === 'err' ? ' err' : '');
+    this.saveState.textContent = state === 'saving' ? 'Saving…' : state === 'err' ? 'Not saved' : 'Saved';
+  }
+
+  /** Android back button / browser back: close sheets first, then leave the editor. */
+  onPop() {
+    if ($('editor').hidden) return;
+    const keep = () => history.pushState({ eden: 'editor' }, '');
+    if (document.querySelector('.modal-back')) { keep(); return; }
+    if (this.isMobile && (this.panelOpen || this.inspOpen)) { this.closeSheets(); keep(); return; }
+    this.goHome(true);
+  }
+
+  helpDialog() {
+    const keys = [[['Space'], 'Play / pause'], [['S'], 'Split at playhead'], [['Del'], 'Delete (Shift to close the gap)'], [['Ctrl', 'Z'], 'Undo'], [['Ctrl', 'Shift', 'Z'], 'Redo'], [['Ctrl', 'D'], 'Duplicate'], [['Ctrl', 'C'], 'Copy'], [['Ctrl', 'V'], 'Paste at playhead'],
+      [['←', '→'], 'Step one frame (Shift: 1 s)'], [['+', '−'], 'Zoom the timeline'], [['Home', 'End'], 'Jump to start / end'], [['Esc'], 'Deselect']];
+    const key = (k, label) => h('div', h('span', k.map((x) => h('span.kbd', x))), h('span', label));
+    const gestures = [['Tap a clip', 'Select it and open its tools'], ['Drag a clip', 'Move it, or drop it on another track'], ['Drag its edges', 'Trim the start or end'], ['Pinch the timeline', 'Zoom in and out'], ['Tap the preview', 'Select text or a sticker, then drag, pinch or twist it']];
+    const body = h('div',
+      h('div.help-sec', { style: { marginTop: '0' } }, 'Quick start'),
+      h('ol.guide-list',
+        h('li', h('span', h('b', 'Add media. '), 'Import videos, photos or audio, or begin with an animated B-roll background.')),
+        h('li', h('span', h('b', 'Trim and arrange. '), 'Drag clips to move them and their edges to trim. Tap the + between two clips to add a transition.')),
+        h('li', h('span', h('b', 'Polish. '), 'Select a clip, then use Filters, Adjust, Effects, Speed and Animate. Add text, stickers and music from the toolbar.')),
+        h('li', h('span', h('b', 'Export. '), 'Choose a resolution, render on your device, then save or share the MP4.'))),
+      h('div.help-sec', 'Touch & mouse'),
+      h('div.keys', gestures.map(([a, b]) => h('div', h('span', { style: { minWidth: '150px', color: 'var(--text)', fontWeight: 600 } }, a), h('span', b)))),
+      h('div.help-sec.desktop-only', 'Keyboard shortcuts'),
+      h('div.help-grid.keys.desktop-only', keys.map(([k, l]) => key(k, l))),
+      isStandalone() ? null : h('div', { style: { marginTop: '18px' } }, h('button.btn.block', { on: { click: () => this.install() } }, icon('download', 17), 'Install EDEN Studio')));
+    modal({ title: 'Quick guide', lead: 'Everything you need to start editing.', body, wide: true, actions: [{ label: 'Done', primary: true }] });
   }
 
   swipeDown(el, fn) {
@@ -152,6 +363,8 @@ class App {
 
   async enterEditor(project) {
     $('home').hidden = true; $('editor').hidden = false;
+    if (history.state?.eden !== 'editor') history.pushState({ eden: 'editor' }, '');
+    document.title = project.name + ' — EDEN Studio';
     const first = !this.engine;
     this.lib.forget(); this.lib.setProject(project.id);
     if (first) {
@@ -170,13 +383,14 @@ class App {
         onTransition: (id) => { this.store.select(id); this.openTool('transitions'); },
         onTrackMenu: (tr, e) => this.trackMenu(tr, e), onContext: (c, e) => this.clipMenu(c, e),
         onOpen: () => { if (!this.isMobile) return; this.openInspector(); },
+        onAddClip: () => this.pickFiles(),
       });
       this.overlayCtl = new PreviewOverlay($('cwrap'), $('overlay'), this);
       this.store.on('change', (info) => this.onChange(info));
       this.store.on('select', () => this.onSelect());
       this.store.on('added', (c) => { if (!this.engine.playing && this.engine.t < c.start + 0.45) this.engine.seek(c.start + 0.45); });
-      this.store.on('saved', () => { this.saveState.textContent = 'Saved'; });
-      this.store.on('save-error', () => { this.saveState.textContent = 'Not saved'; toast('Could not save (storage full?)', 'err'); });
+      this.store.on('saved', () => this.setSave('ok'));
+      this.store.on('save-error', () => { this.setSave('err'); toast('Could not save (storage full?)', 'err'); });
       this.engine.on('frame', () => {});
       window.addEventListener('pagehide', () => this.store.flush());
     }
@@ -185,7 +399,7 @@ class App {
     this.engine.setProject(this.store.project);
     this.engine.seek(0, true);
     this.timeline.render(); this.timeline.scrollToTime(0, false);
-    this.fitCanvas(); this.refreshRatioBtn();
+    this.fitCanvas(); this.refreshRatioBtn(); this.setSave('ok'); this.updateStageEmpty();
     this.tool = this.isMobile ? null : 'media';
     this.renderRail(); if (!this.isMobile) this.openTool('media'); else this.closeSheets();
     this.inspector.render();
@@ -199,7 +413,8 @@ class App {
     this.timeline.render();
   }
 
-  async goHome() {
+  async goHome(fromPop = false) {
+    if (!fromPop && history.state?.eden === 'editor') { history.back(); return; }
     this.engine.pause(); this.store.flush();
     try {
       const d = projectDuration(this.store.project);
@@ -232,7 +447,7 @@ class App {
     this.engine.applySize();
     this.engine.invalidate({ audio: info?.audio !== false });
     this.updateUndo(); this.updateTime(this.engine.t); this.refreshRatioBtn(); this.fitCanvas();
-    this.saveState.textContent = 'Saving…';
+    this.setSave('saving'); this.updateStageEmpty();
     if (!this.inspector.busy) this.inspector.render();
     if (this.panelOpen && ['filters', 'transitions', 'effects', 'media', 'canvas'].includes(this.tool) && !this.inspector.busy) this.refreshPanel();
     this.renderRail();
@@ -270,7 +485,10 @@ class App {
       rail.append(...items);
       return;
     }
-    for (const t of TOOLS) rail.append(h('button.tool' + (this.tool === t.id && this.panelOpen ? '.on' : ''), { title: t.name, on: { click: () => (this.tool === t.id && this.panelOpen && this.isMobile ? this.closeSheets() : this.openTool(t.id)) } }, icon(t.icon, 22), h('span', t.name)));
+    for (const t of TOOLS) {
+      if (t.id === 'effects' || t.id === 'captions') rail.append(h('div.sep'));
+      rail.append(h('button.tool' + (this.tool === t.id && this.panelOpen ? '.on' : ''), { title: t.name, on: { click: () => (this.tool === t.id && this.panelOpen && this.isMobile ? this.closeSheets() : this.openTool(t.id)) } }, icon(t.icon, 22), h('span', t.name)));
+    }
   }
 
   openTool(id) {
@@ -453,7 +671,7 @@ class App {
   // ------------------------------------------------------------ menus
   menu(x, y, items) {
     document.querySelector('.ctxmenu')?.remove();
-    const m = h('div.ctxmenu', items.map((i) => (i === '-' ? h('div.sep') : h('button', { on: { click: () => { m.remove(); i.fn(); } } }, icon(i.icon || 'more', 16), i.label))));
+    const m = h('div.ctxmenu', items.map((i) => (i === '-' ? h('div.sep') : h('button' + (i.danger ? '.danger' : ''), { on: { click: () => { m.remove(); i.fn(); } } }, icon(i.icon || 'more', 16), i.label))));
     document.body.append(m);
     const r = m.getBoundingClientRect();
     m.style.left = clamp(x, 8, innerWidth - r.width - 8) + 'px'; m.style.top = clamp(y, 8, innerHeight - r.height - 8) + 'px';
@@ -500,31 +718,50 @@ class App {
     else if (k === 'end') eng.seek(eng.duration);
     else if (k === '=' || k === '+') this.timeline.zoom(1.3);
     else if (k === '-') this.timeline.zoom(1 / 1.3);
+    else if (k === '?') { this.helpDialog(); }
     else if (k === 'escape') { s.select([]); this.closeSheets(); }
   }
 
   // ------------------------------------------------------------ export
   async exportDialog() {
     const p = this.store.project; this.engine.pause();
-    if (projectDuration(p) <= 0) { toast('Add some clips first', 'err'); return; }
+    const dur = projectDuration(p);
+    if (dur <= 0) { toast('Add some clips first', 'err'); return; }
     const cap = await capabilities();
     const mobile = this.isMobile;
-    const opts = { res: mobile ? '1080' : '1080', fps: 30, quality: 'high', normalize: true };
-    const resList = RESOLUTIONS.filter((r) => (mobile ? ['720', '1080'].includes(r.id) || r.id === '1440' : true));
-    const info = h('div.hint'); const body = h('div');
-    const mk = (label, key, list) => { const g = h('div.opt-grid' + (list.length === 3 ? '.c3' : '')); const draw = () => g.replaceChildren(...list.map(([v, n, s]) => h('button.opt' + (opts[key] === v ? '.on' : ''), { on: { click: () => { opts[key] = v; draw(); upd(); } } }, n, s ? h('small', s) : null))); draw(); body.append(h('div.sub', { style: { margin: '4px 2px' } }, label), g); };
-    mk('Resolution', 'res', resList.map((r) => [r.id, r.name, (() => { const o = outputSize(p, r.short); return `${o.W}×${o.H}`; })()]));
-    mk('Frame rate', 'fps', [[24, '24 fps', 'Cinematic'], [30, '30 fps', 'Standard'], [60, '60 fps', 'Smooth']]);
-    mk('Quality', 'quality', [['high', 'High', 'Larger file'], ['medium', 'Balanced', ''], ['low', 'Small', 'Smallest file']]);
-    body.append(h('div.rowx', h('label', { style: { flex: 1 } }, 'Normalise loudness'), sw2(opts.normalize, (v) => { opts.normalize = v; })), info);
+    const opts = { res: '1080', fps: 30, quality: 'high', normalize: true };
+    const resList = RESOLUTIONS.filter((r) => (mobile ? ['720', '1080', '1440'].includes(r.id) : true));
+    const fast = cap.webcodecs && cap.h264;
+    const presets = [
+      { id: 'social', name: 'Social', sub: '1080p · 30 fps', o: { res: '1080', fps: 30, quality: 'high' } },
+      { id: 'quick', name: 'Quick share', sub: '720p · small file', o: { res: '720', fps: 30, quality: 'low' } },
+      { id: 'best', name: 'Best quality', sub: mobile ? '2K · 60 fps' : '4K · 60 fps', o: { res: mobile ? '1440' : '2160', fps: 60, quality: 'high' } },
+    ].filter((x) => resList.some((r) => r.id === x.o.res));
+    const body = h('div'); const draws = [];
+    const group = (label, key, list) => {
+      const g = h('div.opt-grid' + (list.length === 3 ? '.c3' : ''));
+      const draw = () => g.replaceChildren(...list.map(([v, n, sub]) => h('button.opt' + (opts[key] === v ? '.on' : ''), { on: { click: () => { opts[key] = v; redraw(); } } }, n, sub ? h('small', sub) : null)));
+      draws.push(draw); body.append(h('div.sub', { style: { margin: '4px 2px 6px' } }, label), g);
+    };
+    const same = (o) => Object.entries(o).every(([k, v]) => opts[k] === v);
+    const presetGrid = h('div.opt-grid.c3');
+    const drawPresets = () => presetGrid.replaceChildren(...presets.map((x) => h('button.opt' + (same(x.o) ? '.on' : ''), { on: { click: () => { Object.assign(opts, x.o); redraw(); } } }, x.name, h('small', x.sub))));
+    body.append(h('div.sub', { style: { margin: '0 2px 6px' } }, 'Preset'), presetGrid);
+    group('Resolution', 'res', resList.map((r) => [r.id, r.name, (() => { const o = outputSize(p, r.short); return `${o.W}×${o.H}`; })()]));
+    group('Frame rate', 'fps', [[24, '24 fps', 'Cinematic'], [30, '30 fps', 'Standard'], [60, '60 fps', 'Smooth']]);
+    group('Quality', 'quality', [['high', 'High', 'Larger file'], ['medium', 'Balanced', ''], ['low', 'Small', 'Smallest file']]);
+    body.append(h('div.rowx', h('label', { style: { flex: 1, color: 'var(--text)', fontSize: '13px' } }, 'Normalise loudness'), sw2(opts.normalize, (v) => { opts.normalize = v; })));
+    const sumB = h('b'), sumS = h('span');
+    body.append(h('div.summary', icon('film', 22), h('div', sumB, sumS)));
+    if (!fast) body.append(h('div.hint', { style: { color: 'var(--warn)', marginTop: '10px' } }, 'This browser lacks fast encoding, so your video is recorded in real time. Keep this tab open and in front.'));
     const upd = () => {
       const r = RESOLUTIONS.find((x) => x.id === opts.res); const o = outputSize(p, r.short);
       const mbps = (o.W * o.H * opts.fps * ({ high: 0.2, medium: 0.12, low: 0.07 }[opts.quality])) / 1e6;
-      const size = (mbps * projectDuration(p)) / 8;
-      info.textContent = `${o.W}×${o.H} · about ${fmtBytes(size * 1e6)} · ${fmtDur(projectDuration(p))}` + (cap.webcodecs && cap.h264 ? '' : ' · compatibility mode (real-time)');
+      sumB.textContent = `${o.W}×${o.H} · ${opts.fps} fps · MP4`;
+      sumS.textContent = `About ${fmtBytes(((mbps * dur) / 8) * 1e6)} · ${fmtDur(dur)}` + (fast ? '' : ' · real-time');
     };
-    upd();
-    if (!(cap.webcodecs && cap.h264)) body.append(h('div.hint', { style: { color: 'var(--warn)' } }, 'This browser lacks fast encoding, so your video will be recorded in real time. Keep this tab open and in front.'));
+    const redraw = () => { drawPresets(); draws.forEach((d) => d()); upd(); };
+    redraw();
     modal({ title: 'Export video', lead: 'Rendered on your device. Nothing is uploaded.', body, actions: [{ label: 'Cancel', ghost: true }, { label: 'Export', primary: true, onClick: () => { this.runExport(opts, cap); } }] });
   }
 

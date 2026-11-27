@@ -41,7 +41,7 @@ export function h(tag, props, ...kids) {
       else el.id = part.slice(1);
     }
   }
-  if (props && (props.nodeType || typeof props === 'string' || Array.isArray(props))) { kids.unshift(props); props = null; }
+  if (props != null && (props.nodeType || typeof props === 'string' || typeof props === 'number' || Array.isArray(props))) { kids.unshift(props); props = null; }
   if (props) {
     for (const [k, v] of Object.entries(props)) {
       if (v == null || v === false) continue;
@@ -53,6 +53,7 @@ export function h(tag, props, ...kids) {
       else el.setAttribute(k, v === true ? '' : v);
     }
   }
+  if (props && props.title && el.tagName === 'BUTTON' && !el.hasAttribute('aria-label')) el.setAttribute('aria-label', props.title);
   const add = (k) => {
     if (k == null || k === false) return;
     if (Array.isArray(k)) k.forEach(add);
