@@ -32,6 +32,16 @@ const ICONS = {
   sparkle: '<path d="M12 3.5 14 10l6.5 2-6.5 2-2 6.5L10 14l-6.5-2L10 10l2-6.5Z"/>',
   music: '<path d="M9 18V6l10-2v11"/><circle cx="7" cy="18" r="2.5"/><circle cx="17" cy="15" r="2.5"/>',
   volume: '<path d="M4 10v4h3l4 4V6l-4 4H4Z"/><path d="M15.5 9.5a4 4 0 0 1 0 5M18 7a7.5 7.5 0 0 1 0 10"/>',
+  wand: '<path d="m4 20 11-11"/><path d="m14 5 1-2 1 2 2 1-2 1-1 2-1-2-2-1 2-1Z"/><path d="M19 12l.6 1.4L21 14l-1.4.6L19 16l-.6-1.4L17 14l1.4-.6L19 12Z"/>',
+  pause: '<rect x="6" y="5" width="4" height="14" rx="1.5"/><rect x="14" y="5" width="4" height="14" rx="1.5"/>',
+  image: '<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.8"/><path d="m4 18 5-5 4 4 3-3 4 4"/>',
+  palette: '<path d="M12 3a9 9 0 1 0 0 18c1.2 0 1.8-.8 1.8-1.7 0-1-.9-1.4-.9-2.4 0-.9.7-1.6 1.7-1.6H17a4 4 0 0 0 4-4c0-4.2-4-8.3-9-8.3Z"/><circle cx="7.5" cy="11" r="1.2"/><circle cx="10.5" cy="7.5" r="1.2"/><circle cx="15" cy="7.8" r="1.2"/>',
+  sliders: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4"/>',
+  moon: '<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5Z"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.8 3 2.8 15 0 18M12 3c-2.8 3-2.8 15 0 18"/>',
+  badge: '<circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.3 2.3 4.7-5"/>',
+  brand: '<path d="M12 3 4 7v5c0 4.5 3.3 7.8 8 9 4.7-1.2 8-4.5 8-9V7l-8-4Z"/><path d="m9 12 2.2 2.2L15.5 10"/>',
 };
 export function icon(name, extra = '') {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ${extra}>${ICONS[name] || ''}</svg>`;
@@ -109,3 +119,46 @@ export async function copyText(text) {
     toast('Copy failed. Select the text and copy it manually.', 'err');
   }
 }
+
+
+/* ---------------------------------------------------------------- brand theme
+   The interface accent follows the brand colour, nudged so text stays readable on both themes. */
+const hex2rgb = (h) => { const m = /^#?([0-9a-f]{6})$/i.exec(h || ''); if (!m) return null; const n = parseInt(m[1], 16); return [n >> 16, (n >> 8) & 255, n & 255]; };
+const lin = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+export const luminance = ([r, g, b]) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+const toHex = (rgb) => '#' + rgb.map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+const mix = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+
+export function applyTheme(settings) {
+  const root = document.documentElement;
+  const light = root.dataset.theme === 'light';
+  let rgb = settings && settings.brand_theme !== false ? hex2rgb(settings.brand_color) : null;
+  rgb = rgb || hex2rgb('#2EE6A6');
+  for (let i = 0; i < 12 && !light && luminance(rgb) < 0.2; i++) rgb = mix(rgb, [255, 255, 255], 0.14);
+  for (let i = 0; i < 12 && light && luminance(rgb) > 0.32; i++) rgb = mix(rgb, [0, 0, 0], 0.14);
+  const ink = luminance(rgb) > 0.36 ? '#0a0c11' : '#ffffff';
+  root.style.setProperty('--accent', toHex(rgb));
+  root.style.setProperty('--accent-hi', toHex(mix(rgb, light ? [0, 0, 0] : [255, 255, 255], 0.18)));
+  root.style.setProperty('--accent-ink', ink);
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = light ? '#f5f6f9' : '#0a0c11';
+}
+export function initTheme() {
+  let t = 'dark';
+  try { t = localStorage.getItem('eden.theme') || 'dark'; } catch { /* ignore */ }
+  document.documentElement.dataset.theme = t;
+  document.documentElement.style.colorScheme = t;
+}
+export function toggleTheme(settings) {
+  const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem('eden.theme', next); } catch { /* ignore */ }
+  applyTheme(settings);
+  return next;
+}
+
+/* Remembered choices for the one-click editor. */
+export const prefs = {
+  get() { try { return JSON.parse(localStorage.getItem('eden.prefs') || '{}'); } catch { return {}; } },
+  set(patch) { try { localStorage.setItem('eden.prefs', JSON.stringify({ ...prefs.get(), ...patch })); } catch { /* ignore */ } },
+};

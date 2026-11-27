@@ -20,7 +20,7 @@ export async function settings(root, ctx) {
       <span class="saved-flag" id="flag" aria-live="polite">${icon('check', 'width="14" height="14" style="vertical-align:-2px"')} Saved</span></div>
     <div class="set-grid">
       <nav class="set-nav" aria-label="Settings sections">
-        ${[['profile', 'Profile'], ['brand', 'Branding'], ['defaults', 'Editing defaults'], ['speech', 'Speech recognition'], ['ai', 'AI assist'], ['stock', 'Stock footage'], ['system', 'System status']]
+        ${[['profile', 'Profile'], ['brand', 'Brand'], ['defaults', 'Editing defaults'], ['speech', 'Speech recognition'], ['ai', 'AI assist'], ['stock', 'Stock footage'], ['system', 'System status']]
           .map(([id, l]) => `<a href="#/settings" data-jump="${id}">${l}</a>`).join('')}
       </nav>
       <div class="set-sections">
@@ -29,20 +29,9 @@ export async function settings(root, ctx) {
           <p class="muted small" style="margin-top:10px">Eden runs on your own computer, so there is no account to sign in to. Your videos and settings stay in the data folder.</p>
         </section>
 
-        <section class="panel" id="brand"><div class="panel-head"><h2 class="h-sec">Branding</h2></div>
-          <div class="form-grid">
-            <label class="field"><span>Highlight colour</span><div style="display:flex;gap:10px;align-items:center"><input type="color" data-k="brand_color" value="${esc(s.brand_color)}"><code class="small">${esc(s.brand_color)}</code></div></label>
-            <label class="field"><span>Caption font</span><input type="text" data-k="caption_font" value="${esc(s.caption_font)}" maxlength="60"><small>Must be installed on this computer. Falls back to a default if not.</small></label>
-            <div class="full">${toggle('use_brand_color', 'Use my colour for highlighted words', 'Replaces the style’s highlight colour in word-by-word caption styles.', s.use_brand_color)}</div>
-          </div>
-          <div class="logo-box" style="margin-top:14px">
-            <div class="prev">${s.logo_url ? `<img src="${esc(s.logo_url)}?t=${Date.now()}" alt="Your logo">` : '<span class="muted small">No logo</span>'}</div>
-            <div style="display:grid;gap:8px">
-              <div style="display:flex;gap:8px;flex-wrap:wrap"><label class="btn ghost sm" style="cursor:pointer">${icon('upload')}${s.logo_url ? 'Replace logo' : 'Upload logo'}<input type="file" id="logoIn" accept="image/png,image/jpeg,image/webp" hidden></label>
-              ${s.logo_url ? `<button class="btn danger sm" id="logoRm">Remove</button>` : ''}</div>
-              <small class="muted">PNG with a transparent background works best.</small></div>
-          </div>
-          ${s.logo_url ? toggle('logo_enabled', 'Add my logo to every video', 'You can still turn it off per video.', s.logo_enabled) : ''}
+        <section class="panel" id="brand"><div class="panel-head"><h2 class="h-sec">Brand</h2></div>
+          <p class="muted">Your brand name, colors, font and logo live in the Brand kit.</p>
+          <p style="margin-top:12px"><a class="btn ghost sm" href="#/brand">${icon('palette')}Open brand kit</a></p>
         </section>
 
         <section class="panel" id="defaults"><div class="panel-head"><h2 class="h-sec">Editing defaults</h2></div>
@@ -74,7 +63,7 @@ export async function settings(root, ctx) {
         </section>
 
         <section class="panel" id="stock"><div class="panel-head"><h2 class="h-sec">Stock footage</h2><span class="pill">Optional</span></div>
-          <p class="muted small" style="margin-bottom:14px">With a free <a href="https://www.pexels.com/api/" target="_blank" rel="noopener" style="color:var(--amber)">Pexels API key</a>, Eden can fetch short stock clips for B-roll when your library is small. Only a search word leaves this computer.</p>
+          <p class="muted small" style="margin-bottom:14px">With a free <a href="https://www.pexels.com/api/" target="_blank" rel="noopener" >Pexels API key</a>, Eden can fetch short stock clips for B-roll when your library is small. Only a search word leaves this computer.</p>
           <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
             <label class="field" style="flex:1;min-width:240px"><span>API key ${s.pexels_key_set ? '<span class="pill ok">Saved</span>' : ''}</span>
               <input type="password" id="pexKey" autocomplete="off" placeholder="${s.pexels_key_set ? 'Enter a new key to replace it' : 'Paste your key'}"></label>
@@ -101,6 +90,7 @@ export async function settings(root, ctx) {
     try {
       s = await api('/settings', { method: 'PUT', body: patch });
       Object.assign(ctx.settings, s);
+      ctx.refreshBrand?.();
       const f = flag(); f.classList.add('show'); setTimeout(() => f.classList.remove('show'), 1600);
       return true;
     } catch (err) { toast(err.message, 'err'); return false; }
@@ -114,7 +104,7 @@ export async function settings(root, ctx) {
         let v = el.type === 'checkbox' ? el.checked : el.value;
         if (k === 'loudness') v = Number(v);
         await save({ [k]: v });
-        if (k === 'brand_color') { const c = el.parentElement.querySelector('code'); if (c) c.textContent = v; }
+        
       });
       if (el.type === 'text' || el.type === 'url') el.addEventListener('input', () => { if (el.value.trim() || k === 'display_name') saveSoon({ [k]: el.value }); });
     });
@@ -124,15 +114,6 @@ export async function settings(root, ctx) {
       set.has(b.dataset.plat) ? set.delete(b.dataset.plat) : set.add(b.dataset.plat);
       if (!set.size) return toast('Keep at least one platform selected.', 'err');
       if (await save({ default_platforms: [...set] })) b.setAttribute('aria-pressed', String(set.has(b.dataset.plat)));
-    });
-    $('#logoIn', root).addEventListener('change', async (e) => {
-      const f = e.target.files[0]; if (!f) return;
-      const fd = new FormData(); fd.append('file', f);
-      try { s = await api('/settings/logo', { method: 'POST', form: fd }); Object.assign(ctx.settings, s); toast('Logo uploaded'); draw(); }
-      catch (err) { toast(err.message, 'err'); }
-    });
-    $('#logoRm', root)?.addEventListener('click', async () => {
-      s = await api('/settings/logo', { method: 'DELETE' }); Object.assign(ctx.settings, s); draw();
     });
     $('#testOllama', root).addEventListener('click', async () => {
       const out = $('#ollamaRes', root);

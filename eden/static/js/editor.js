@@ -27,6 +27,7 @@ export async function edit(root, ctx, params) {
   const dropBroll = new Set();
   const addBroll = [];
 
+  const builtins = (ctx.meta.music_tracks || []).map((b) => ({ id: b.id, name: `${b.label} (built-in)`, duration: b.duration }));
   const opt = (list, val, none) => `<option value="">${none}</option>` +
     list.map((t) => `<option value="${esc(t.id)}" ${t.id === val ? 'selected' : ''}>${esc(t.name)} (${fmtDur(t.duration)})</option>`).join('');
 
@@ -40,7 +41,7 @@ export async function edit(root, ctx, params) {
         <section class="panel" style="margin-top:18px" aria-labelledby="sndH">
           <div class="panel-head"><h2 class="h-sec" id="sndH">Sound for the re-render</h2></div>
           <div class="form-grid">
-            <label class="field"><span>Background music</span><select id="eMusic">${opt(musicLib, opts.music_id, 'No music')}</select></label>
+            <label class="field"><span>Background music</span><select id="eMusic">${`<option value="auto" ${opts.music_id === 'auto' ? 'selected' : ''}>Auto-pick for this style</option>` + opt([...builtins, ...musicLib], opts.music_id, 'No music').replace('<option value="">No music</option>', '<option value="">No music</option>')}</select></label>
             <label class="field"><span>Music volume</span><input type="range" id="eMusicVol" min="0" max="100" value="${Math.round((opts.music_volume ?? 0.35) * 100)}"></label>
             <label class="field"><span>Whoosh on punch-in zooms</span><select id="eWhoosh">${opt(sfxLib, opts.whoosh_sfx_id, 'None')}</select></label>
             <label class="field"><span>Pop on emphasized words</span><select id="ePop">${opt(sfxLib, opts.pop_sfx_id, 'None')}</select></label>

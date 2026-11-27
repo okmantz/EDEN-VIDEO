@@ -4,6 +4,16 @@ import { $, $$, esc, icon, fmtDur, fmtSize, timeAgo, plural, openModal, toast, c
 
 export const IN_FLIGHT = new Set(['queued', 'running']);
 
+// The pipeline reports named stages; show them as five steps so the wait feels like progress.
+const STEP_NAMES = ['Read', 'Listen', 'Plan', 'Cut', 'Polish'];
+const STAGE_STEP = { 'Reading video': 0, 'Finding silences': 0, 'Transcribing speech': 1, 'Planning the edit': 2, 'Cutting & polishing': 3, 'Adding captions & b-roll': 4, Finishing: 4, Done: 5 };
+function stepper(v) {
+  const now = v.status === 'queued' ? -1 : (STAGE_STEP[v.stage] ?? 0);
+  return `<div class="stepper" aria-hidden="true">${STEP_NAMES.map((_, i) => `<i class="${i < now ? 'done' : i === now ? 'now' : ''}"></i>`).join('')}</div>
+    <div class="stepper-l" aria-hidden="true">${STEP_NAMES.map((n, i) => `<span class="${i === now ? 'on' : ''}">${n}</span>`).join('')}</div>`;
+}
+const sigOf = (v) => `${v.status}|${v.title}|${v.finished_at || ''}|${IN_FLIGHT.has(v.status) ? (STAGE_STEP[v.stage] ?? 0) : ''}`;
+
 function ratio(v) {
   const r = (v.width || 9) / (v.height || 16);
   return Math.max(0.7, r);
@@ -27,6 +37,7 @@ export function cardHtml(v) {
     body = `<div class="vprog" data-prog>
         <div class="row"><b data-stage>${esc(v.stage || 'Queued')}</b><span class="num" data-pct>${Math.round(v.progress || 0)}%</span></div>
         <div class="bar${v.status === 'queued' ? ' indet' : ''}"><i style="width:${Math.max(3, v.progress || 0)}%"></i></div>
+        ${stepper(v)}
       </div>
       <div class="vactions"><button class="btn ghost sm" data-act="cancel">${icon('stop')}Cancel</button></div>`;
   } else if (failed) {
@@ -44,7 +55,7 @@ export function cardHtml(v) {
         <button class="icon-btn danger" data-act="delete" aria-label="Delete">${icon('trash')}</button>
       </div>`;
   }
-  return `<article class="vcard" data-id="${esc(v.id)}" data-sig="${esc(v.status)}|${esc(v.title)}|${v.finished_at || ''}">
+  return `<article class="vcard" data-id="${esc(v.id)}" data-sig="${esc(sigOf(v))}">
     ${thumbEl}
     <div class="vbody"><div class="title">${esc(v.title)}</div>
       <div class="sub">${timeAgo(v.created_at)}${v.project_name && v.project_name !== v.title ? ` · ${esc(v.project_name)}` : ''}</div>
@@ -59,7 +70,7 @@ export function syncGrid(grid, videos, { emptyHtml = '' } = {}) {
   let prev = null;
   videos.forEach((v) => {
     let el = existing.get(v.id);
-    const sig = `${v.status}|${v.title}|${v.finished_at || ''}`;
+    const sig = sigOf(v);
     if (!el) {
       const t = document.createElement('div');
       t.innerHTML = cardHtml(v);
@@ -109,6 +120,7 @@ export function openPlayer(v, { onChange } = {}) {
     ['Length', fmtDur(v.duration)], ['Original', fmtDur(st.source_duration)],
     ['Silence removed', `${(st.silence_removed || 0).toFixed(1)}s`], ['Filler words cut', st.fillers_removed ?? 0],
     ['Cuts made', st.cuts ?? 0], ['B-roll cutaways', st.broll_count ?? 0],
+    ...(st.caption_preset ? [['Captions', st.caption_preset]] : []), ...(st.music ? [['Music', st.music]] : []),
   ].map(([k, val]) => `<div>${k}<b class="num">${esc(val)}</b></div>`).join('');
   const hashtags = (meta.hashtags || []).join(' ');
   const row = (label, value) => value ? `<div class="copyrow"><div class="lab">${label}

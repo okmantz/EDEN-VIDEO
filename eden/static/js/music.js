@@ -1,6 +1,6 @@
 // Music & sounds library: background tracks and short sound effects.
 import { api, uploadFile } from './api.js';
-import { $, esc, icon, fmtDur, toast, confirmDialog } from './ui.js';
+import { $, $$, esc, icon, fmtDur, toast, confirmDialog } from './ui.js';
 
 const ACCEPT = 'audio/*,.mp3,.wav,.m4a,.ogg,.oga,.flac,.aac,.wma';
 
@@ -19,10 +19,14 @@ function section(kind, title, blurb, emptyBlurb) {
 export async function music(root, ctx) {
   root.innerHTML = `
     <div class="page-head"><div><h1 class="h-page">Music & sounds</h1>
-      <p>Your own tracks and effects. Eden never generates audio — everything here is a file you uploaded.</p></div></div>
-    ${section('music', 'Background music',
-      'Longer tracks Eden can lay under a video. It ducks the music under your voice automatically, so speech always stays on top.',
-      'No music yet. Add an MP3 or WAV you have the rights to use — lo-fi beds and acoustic tracks work well under talking.')}
+      <p>Eden includes royalty-free background tracks, and you can add your own. Music always ducks under your voice.</p></div></div>
+    <section class="panel" style="margin-bottom:22px" aria-label="Built-in tracks">
+      <div class="panel-head"><div><h2 class="h-sec">Built-in tracks</h2><p>Made by Eden, free to use in anything you post. Seamless loops that fit under speech.</p></div><span class="pill accent">${icon('sparkle', 'width="13" height="13"')}Included</span></div>
+      <div class="bgrid" id="builtin"></div><audio id="aud" preload="none" hidden></audio>
+    </section>
+    ${section('music', 'Your music',
+      'Tracks you upload. Pick them when you edit a video. Only add music you have the rights to use.',
+      'No music yet. Add an MP3 or WAV you have the rights to use.')}
     ${section('sfx', 'Sound effects',
       'Short sounds for accents: a <b>whoosh</b> on punch-in zooms, a <b>pop</b> on emphasized caption words. Pick them when you create a video.',
       'No sound effects yet. Add short whooshes, pops or risers (a second or two each).')}`;
@@ -76,5 +80,23 @@ export async function music(root, ctx) {
     try { await api(`/${kind}/${card.dataset.id}`, { method: 'DELETE' }); toast('Deleted'); load(kind); }
     catch (err) { toast(err.message, 'err'); }
   });
+  // built-in tracks with a play button each
+  const aud = $('#aud', root);
+  try {
+    const list = await api('/music/builtin');
+    $('#builtin', root).innerHTML = list.map((t) => `<div class="btrack"><button class="pbtn" type="button" data-bplay="${esc(t.key)}" aria-label="Play ${esc(t.label)}">${icon('play')}</button>
+      <div><b>${esc(t.label)}</b><small>${esc(t.mood)} · ${t.bpm} BPM · ${esc(t.blurb)}</small></div><span class="pill">${fmtDur(t.duration)}</span></div>`).join('');
+  } catch (err) { $('#builtin', root).innerHTML = `<p class="muted small">${esc(err.message)}</p>`; }
+  root.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-bplay]'); if (!b) return;
+    const key = b.dataset.bplay;
+    $$('[data-bplay]', root).forEach((x) => { x.innerHTML = icon('play'); });
+    if (!aud.paused && aud.dataset.key === key) { aud.pause(); return; }
+    aud.dataset.key = key; aud.src = `/api/music/builtin/${key}/file`;
+    b.innerHTML = icon('pause');
+    aud.play().catch(() => { b.innerHTML = icon('play'); toast('Could not play the preview.', 'err'); });
+    aud.onended = () => { b.innerHTML = icon('play'); };
+  });
   await loadAll();
+  return () => aud.pause();
 }
