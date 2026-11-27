@@ -2,40 +2,53 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>EDEN Studio — Video editor in your browser</title>
+<title>EDEN Studio — Pro video editor in your browser</title>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
-<meta name="description" content="EDEN Studio: a free, private, CapCut-style video editor that runs entirely in your browser. Multi-track timeline, 50+ effects, 40 transitions, 58 B-roll backgrounds, music, captions and 4K export.">
-<meta name="theme-color" content="#06080b">
+<meta name="description" content="EDEN Studio: a free, private video editor that runs entirely in your browser. Multi-track timeline, 47 effects, 40 transitions, music, captions and 4K export. Install it on your phone or computer.">
+<meta name="theme-color" content="#07080b">
+<meta name="color-scheme" content="dark">
+<meta name="application-name" content="EDEN Studio">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="EDEN Studio">
+<meta name="format-detection" content="telephone=no">
+<meta property="og:title" content="EDEN Studio">
+<meta property="og:description" content="A free, private, pro-grade video editor that runs in your browser.">
+<meta property="og:type" content="website">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="assets/icons/icon-192.png" type="image/png">
+<link rel="icon" href="assets/icons/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="assets/icons/favicon-32.png" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
 <link rel="preload" href="assets/fonts/inter-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/inter-latin-800-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="css/fonts.css">
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
-<div class="loading" id="loading"><div style="text-align:center"><div class="logo" style="margin:0 auto 18px;width:54px;height:54px;border-radius:17px"></div><div class="spin" style="margin:0 auto"></div></div></div>
+<div class="loading" id="loading" role="status" aria-label="Loading EDEN Studio">
+  <div class="lw">
+    <svg class="logo-mark" viewBox="0 0 512 512" width="64" height="64" aria-hidden="true"><defs><linearGradient id="lgs" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#86f7d0"/><stop offset="1" stop-color="#5fd0ff"/></linearGradient></defs><rect width="512" height="512" rx="116" fill="url(#lgs)"/><g fill="#05130e" stroke="#05130e" stroke-linejoin="round" stroke-linecap="round"><rect x="146" y="132" width="50" height="248" rx="25" stroke="none"/><rect x="146" y="132" width="224" height="50" rx="25" stroke="none"/><rect x="146" y="330" width="224" height="50" rx="25" stroke="none"/><path d="M234 208 L234 304 L326 256 Z" stroke-width="26"/></g></svg>
+    <div class="lt">EDEN STUDIO</div>
+  </div>
+</div>
 <div id="app">
   <section id="home" hidden></section>
   <section id="editor" hidden>
     <header class="topbar" id="topbar"></header>
     <nav class="rail" id="rail" aria-label="Tools"></nav>
-    <aside class="panel" id="panel"><div class="sheet-grab" id="panelGrab"><i></i></div><div class="ph"><h3 id="panelTitle"></h3><button class="btn ghost sm icon x" id="panelClose" aria-label="Close"></button></div><div class="pb" id="panelBody"></div></aside>
+    <aside class="panel" id="panel" aria-label="Library"><div class="sheet-grab" id="panelGrab"><i></i></div><div class="ph"><h3 id="panelTitle"></h3><button class="btn ghost sm icon x" id="panelClose" aria-label="Close"></button></div><div class="pb" id="panelBody"></div></aside>
     <main class="stage" id="stage">
-      <div class="viewport" id="viewport"><div class="cwrap" id="cwrap"><canvas id="cv"></canvas><div id="overlay"></div></div></div>
+      <div class="viewport" id="viewport"><div class="cwrap" id="cwrap"><canvas id="cv" aria-label="Video preview"></canvas><div id="overlay"></div></div><div class="stage-empty" id="stageEmpty" hidden></div></div>
       <div class="transport" id="transport"></div>
     </main>
-    <aside class="inspector" id="inspector"><div class="sheet-grab" id="inspGrab"><i></i></div><div class="ph"><h3 id="inspTitle">Edit</h3><button class="btn ghost sm icon x" id="inspClose" aria-label="Close"></button></div><div class="pb" id="inspBody"></div></aside>
-    <section class="timeline" id="timeline"></section>
+    <aside class="inspector" id="inspector" aria-label="Clip settings"><div class="sheet-grab" id="inspGrab"><i></i></div><div class="ph"><h3 id="inspTitle">Edit</h3><button class="btn ghost sm icon x" id="inspClose" aria-label="Close"></button></div><div class="pb" id="inspBody"></div></aside>
+    <section class="timeline" id="timeline" aria-label="Timeline"></section>
   </section>
 </div>
 <div class="scrim" id="scrim"></div>
 <div id="toasts" aria-live="polite"></div>
-<noscript><p style="padding:24px">EDEN Studio needs JavaScript.</p></noscript>
+<noscript><p style="padding:24px;color:#fff">EDEN Studio needs JavaScript.</p></noscript>
 <script type="module" src="js/app.js"></script>
 </body>
 </html>
