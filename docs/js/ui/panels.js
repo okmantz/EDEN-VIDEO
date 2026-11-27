@@ -8,6 +8,9 @@ import { MUSIC, SFX, moodColor } from '../synth.js';
 import { builtinMedia } from '../audio.js';
 import { TEXT_PRESETS, SHAPE_LIST } from '../textrender.js';
 import { RATIOS } from '../model.js';
+import { stockBrowser } from './stockui.js';
+import { hasStock } from '../stock.js';
+import { loadBrand } from '../brand.js';
 
 export const TOOLS = [
   { id: 'media', name: 'Media', icon: 'media' }, { id: 'broll', name: 'B-roll', icon: 'broll' }, { id: 'audio', name: 'Audio', icon: 'audio' },
@@ -89,15 +92,44 @@ export class Panels {
   }
 
   // ------------------------------------------------------------ b-roll
+  /** B-roll has two sources: real stock footage (needs a free key) and the built-in animated scenes (work offline). */
   p_broll() {
+    const { app, state } = this;
+    if (!state.brollTab) state.brollTab = hasStock(loadBrand()) ? 'real' : 'anim';
+    const wrap = h('div');
+    const seg = h('div.seg', ...[['real', 'Real footage'], ['anim', 'Animated']].map(([id, n]) => h('button' + (state.brollTab === id ? '.on' : ''), { type: 'button', on: { click: () => { state.brollTab = id; app.refreshPanel(); } } }, n)));
+    wrap.append(seg, h('div', { style: { height: '12px' } }));
+    wrap.append(state.brollTab === 'real' ? this._stock() : this._animated());
+    return wrap;
+  }
+  _stock() {
+    const { app } = this;
+    const orient = () => { const c = app.store.project?.canvas; if (!c) return 'any'; const a = c.w / c.h; return a < 0.9 ? 'portrait' : a > 1.15 ? 'landscape' : 'square'; };
+    return stockBrowser(app, {
+      cols: 'g2', orient,
+      onPick: async (file, item) => {
+        const m = await app.lib.importFile(file);
+        const c = app.store.appendMedia(m);
+        // b-roll is a cutaway: keep videos short, and give photos a slow push-in so they are not static
+        app.store.commit(() => {
+          if (m.kind === 'video') c.dur = Math.min(c.dur, 8);
+          else { c.dur = 5; c.kf = { s: [{ t: 0, v: 1, e: 'inout' }, { t: 5, v: 1.1, e: 'inout' }] }; }
+        });
+        app.timeline.fit(); app.engine.seek(0);
+        app.toast(item.kind === 'photo' ? 'Photo added to the end of your timeline' : 'Clip added to the end of your timeline', 'ok');
+        if (app.isMobile) app.closeSheets();
+      },
+    });
+  }
+  _animated() {
     const { app, state } = this;
     const wrap = h('div');
     const chips = h('div.chips');
     const list = h('div.grid.g3');
     const draw = () => {
-      chips.replaceChildren(...[{ id: 'all', name: 'All' }, ...GENRES].map((g) => h('button.chip' + (state.genre === g.id ? '.on' : ''), { on: { click: () => { state.genre = g.id; draw(); } } }, g.name)));
+      chips.replaceChildren(...[{ id: 'all', name: 'All' }, { id: 'real', name: 'Realistic' }, ...GENRES].map((g) => h('button.chip' + (state.genre === g.id ? '.on' : ''), { on: { click: () => { state.genre = g.id; draw(); } } }, g.name)));
       const q = (state.q.broll || '').trim().toLowerCase();
-      const gens = GENERATORS.filter((g) => (state.genre === 'all' || g.genre === state.genre) && (!q || g.name.toLowerCase().includes(q)));
+      const gens = GENERATORS.filter((g) => (state.genre === 'all' || (state.genre === 'real' ? g.real : g.genre === state.genre)) && (!q || g.name.toLowerCase().includes(q)));
       list.replaceChildren();
       for (const g of gens) {
         const im = lazyThumb(h('div.im'), 'gen', g.id);
@@ -106,7 +138,7 @@ export class Panels {
       if (!gens.length) list.append(h('div.noresult', { style: { gridColumn: '1/-1' } }, `No matches for “${state.q.broll}”`));
     };
     draw();
-    wrap.append(h('div.hint', `${GENERATORS.length} animated backgrounds across ${GENRES.length} genres. Rendered live in any aspect ratio, royalty-free, and they loop.`), this._search('broll', 'Search backgrounds', draw), chips, list);
+    wrap.append(h('div.hint', `${GENERATORS.length} animated backgrounds, including ${GENERATORS.filter((g) => g.real).length} realistic scenes (skylines, cash, charts, rain, Earth). Rendered live in any aspect ratio, royalty-free, they work offline and loop.`), this._search('broll', 'Search backgrounds', draw), chips, list);
     return wrap;
   }
 

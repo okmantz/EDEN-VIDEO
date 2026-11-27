@@ -5,7 +5,9 @@ import { loadBrand, isConfigured, brandEditor } from '../brand.js';
 import { Storage } from '../media.js';
 import { RATIOS } from '../model.js';
 import { oneClickDialog } from '../oneclick.js';
-import { TEMPLATES, CATEGORIES, buildTemplate, templateDuration, templateClipSlots, brandPalette } from '../templates.js';
+import { TEMPLATES, CATEGORIES, buildTemplate, templateDuration, templateClipSlots, brandPalette, templateStockQueries } from '../templates.js';
+import { openStockPicker } from './stockui.js';
+import { hasStock, keysOf, fetchStockFile } from '../stock.js';
 import { logoFile } from '../brand.js';
 import { lazyPoster, LivePreview } from '../tplpreview.js';
 import { builtinMedia } from '../audio.js';
@@ -176,6 +178,7 @@ function openTemplate(app, t) {
   let pvT = 0; const refreshSoon = () => { clearTimeout(pvT); pvT = setTimeout(() => fillPrev.setOptions({ values: { ...values } }), 140); };
   setTimeout(() => { fillPrev.refresh(); if (!calm.matches) fillPrev.play(0); }, 30);
 
+  const orient = () => { const R = RATIOS.find((r) => r.id === ratio) || R0; const a = R.w / R.h; return a < 0.9 ? 'portrait' : a > 1.15 ? 'landscape' : 'square'; };
   const slotsEl = h('div.slots');
   const setFile = (i, f) => {
     if (urls[i]) URL.revokeObjectURL(urls[i]);
@@ -199,6 +202,7 @@ function openTemplate(app, t) {
         drop: (e) => { e.preventDefault(); row.classList.remove('over'); const x = e.dataTransfer?.files?.[0]; if (x) setFile(i, x); },
       } },
     h('div.sth', th), h('div.st', h('b', `${i + 1}. ${s.label}`), h('small', f ? f.name : s.hint)),
+    f ? null : h('button.stockbtn', { type: 'button', title: 'Choose stock footage for this slot', 'aria-label': 'Choose stock footage for ' + s.label, on: { click: (e) => { e.stopPropagation(); openStockPicker(app, { title: `Stock for \u201C${s.label}\u201D`, orient, onPick: async (file) => { setFile(i, file); } }); } } }, icon('film', 13), 'Stock'),
     f ? h('button.x.btn.ghost.sm.icon', { 'aria-label': 'Remove ' + s.label, on: { click: () => setFile(i, null) } }, icon('close', 15)) : h('span.add', icon('plus', 16)));
     return row;
   }));
@@ -220,6 +224,29 @@ function openTemplate(app, t) {
   drawFmt();
   const several = h('button.btn.sm', { type: 'button', on: { click: () => pickFile(MEDIA, true, fill) } }, icon('upload', 15), 'Add several at once');
 
+  /* Fill every empty slot with stock footage that suits this template, so it works with nothing filmed yet. */
+  const fillTitle = h('b', 'Fill with stock footage'), fillSub = h('small', 'Real clips matched to this template. Swap any of them after.');
+  const fillBtn = h('button.fillstock', { type: 'button', on: { click: async () => {
+    const empties = t.slots.map((s, i) => (!s.card && !files[i] ? i : -1)).filter((i) => i >= 0);
+    if (!empties.length) { app.toast('Every slot already has a clip'); return; }
+    if (!hasStock(loadBrand())) {
+      openStockPicker(app, { title: 'Stock footage', orient, onPick: async (file) => { const i = empties[0]; setFile(i, file); } });
+      return;
+    }
+    const qs = templateStockQueries(t) || ['city skyline night', 'modern office', 'business meeting', 'aerial city skyline sunset'];
+    const keys = keysOf(loadBrand()); const portrait = orient() === 'portrait';
+    fillBtn.disabled = true; let got = 0;
+    for (let k = 0; k < empties.length; k++) {
+      const i = empties[k];
+      fillTitle.textContent = `Filling ${k + 1} of ${empties.length}\u2026`; fillSub.textContent = t.slots[i].label;
+      const q = t.slots[i].q || qs[k % qs.length];
+      const f = await fetchStockFile(q, { keys, portrait, pick: Math.floor(k / qs.length), maxMB: 25 });
+      if (f) { setFile(i, f); got++; }
+    }
+    fillBtn.disabled = false; fillTitle.textContent = 'Fill with stock footage'; fillSub.textContent = 'Real clips matched to this template. Swap any of them after.';
+    app.toast(got === empties.length ? 'Filled. Swap any clip you like.' : got ? `Filled ${got} of ${empties.length}. Add the rest yourself.` : 'Could not get stock footage. Check your key and connection.', got ? 'ok' : 'err', 4500);
+  } } }, h('span.ic', icon('film', 18)), h('div', fillTitle, fillSub));
+
   async function run() {
     const step = h('small.pnote', ''); const bar = h('i');
     const dlg = app.modal({ title: 'Creating your video', lead: 'Building the timeline on your device.', body: h('div', h('div.pbar', bar), step), dismiss: false });
@@ -238,7 +265,7 @@ function openTemplate(app, t) {
     h('div.fill',
       h('aside.fill-l', h('div.fill-stage', coverBox, h('div.pvbar', playBtn, musicBtn, h('small', 'Preview with sample scenes'))), h('h1', t.name), h('p', t.blurb), h('div.tags', h('span', t.ratio), h('span', `~${Math.round(templateDuration(t))}s`), h('span', t.cat))),
       h('div.fill-r',
-        h('section.fcard', h('div.fh', h('h3', '1 · Your clips'), several), h('p.fhint', 'Tap a slot to choose a video or photo. Drag files onto a slot too.'), slotsEl),
+        h('section.fcard', h('div.fh', h('h3', '1 · Your clips'), several), h('p.fhint', 'Tap a slot to choose a video or photo, or tap Stock for real footage. Drag files onto a slot too.'), t.slots.some((s) => !s.card) ? fillBtn : null, slotsEl),
         texts.length ? h('section.fcard', h('div.fh', h('h3', '2 · Your words')), h('div.tfields', texts)) : null,
         h('section.fcard', h('div.fh', h('h3', texts.length ? '3 · Style' : '2 · Style')), brandSwitch, h('div.fld', h('span', 'Format'), fmt)),
         h('div.createbar', status, create)))));
