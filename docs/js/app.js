@@ -4,6 +4,7 @@ import { Store } from './state.js';
 import { AudioBank, builtinMedia } from './audio.js';
 import { loadBrand, saveBrand, applyTheme, brandDialog, isConfigured } from './brand.js';
 import { oneClickDialog } from './oneclick.js';
+import { showShell } from './ui/shell.js';
 import { MediaLibrary, Storage } from './media.js';
 import { Engine } from './engine.js';
 import { loadFonts, mergeText, TEXT_PRESETS } from './textrender.js';
@@ -128,64 +129,8 @@ class App {
       h('span.dot' + (ready ? '.ok' : ''), ready ? 'Ready to use offline' : 'Preparing offline mode…'));
   }
 
-  // ------------------------------------------------------------ home
-  async showHome() {
-    if (this.engine) { this.engine.pause(); }
-    document.title = 'EDEN Studio — Pro video editor in your browser';
-    const home = $('home'); $('editor').hidden = true; home.hidden = false;
-    const [list, est] = await Promise.all([Storage.listProjects().catch(() => []), Storage.estimate()]);
-    const open = (p) => this.openProject(p.id);
-    const cards = list.map((p) => h('div.pcard', { tabindex: 0, role: 'button', 'aria-label': 'Open ' + p.name, on: { click: () => open(p), keydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(p); } } } },
-      h('div.th', { style: p.thumb ? `--img:url("${p.thumb}")` : '' }, p.thumb ? h('div.pic') : icon('film', 30, 'ph-ic'), h('span.badge', p.duration ? fmtDur(p.duration) : 'Empty'), h('span.badge.r', p.ratio)),
-      h('button.more', { title: 'Project options', on: { click: (e) => { e.stopPropagation(); this.projectMenu(p, e); } } }, icon('dots', 16)),
-      h('div.meta', h('b', p.name), h('span', 'Edited ' + ago(p.updated)))));
-    this.startPick = h('input', { type: 'file', accept: MEDIA_ACCEPT, multiple: true, hidden: true, on: { change: (e) => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) this.startFromFiles(fs); } } });
-    this.editPick = h('input', { type: 'file', accept: 'video/*,.mp4,.mov,.m4v,.webm', hidden: true, on: { change: (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) oneClickDialog(this, f); } } });
-    this.installBtn = h('button.btn.sm', { title: 'Install EDEN Studio', on: { click: () => this.install() } }, icon('download', 16), h('span', 'Install'));
-    this.installCard = h('div.install-card', h('div.ci', icon('phone', 22)), h('div', h('b', 'Install EDEN Studio'), h('span', 'Add it to your home screen for a full-screen app that works offline.')), h('button.btn.primary.sm', { on: { click: () => this.install() } }, 'Install'));
-    this.statusRow = h('div.status-row');
-    const k = 44;
-    const fmtCards = RATIOS.map((r) => { const f = k / Math.max(r.w, r.h); return h('button.fmt', { on: { click: () => this.createProject(r.id, 'My video') } }, h('div.frame', h('i', { style: { width: Math.round(r.w * f) + 'px', height: Math.round(r.h * f) + 'px' } })), h('div', h('b', r.name), h('small', r.sub))); });
-    const newCard = h('button.pcard.new', { on: { click: () => this.newProjectDialog() } }, h('div', h('div.plus', icon('plus', 22)), h('b', 'New project')));
-    const row = (a, b, c) => h('div', ...[a, b, c].map(([f, w, col]) => h('b', { style: `flex:${f};--c:${col}` })));
-    const caps = [
-      ['layers', 'Multi-track timeline', 'Video, overlays, text, effects and audio with snapping and unlimited undo.'],
-      ['effects', `${EFFECTS.length} effects · ${TRANSITIONS.length} transitions`, `Glitch, VHS, light leaks, wipes, zooms and ${FILTERS.length - 1} colour looks.`],
-      ['audio', 'Music & sound', `${MUSIC.length} original tracks and ${SFX.length} sound effects, with auto-ducking.`],
-      ['export', '4K export', 'H.264 MP4 up to 4K, rendered on your device and shared in one tap.'],
-    ];
-    home.replaceChildren(this.startPick, this.editPick, h('div.home-in',
-      h('div.home-nav', h('div.brand', logoMark(34), h('b', 'EDEN'), h('span', 'STUDIO')), h('div.sp'), h('button.btn.sm.profile-btn', { title: 'Brand profile', on: { click: () => brandDialog(this, () => this.showHome()) } }, brandAvatar(), h('span', isConfigured(loadBrand()) ? (loadBrand().name || 'Brand') : 'Brand profile')), this.installBtn,
-        h('button.btn.ghost.icon', { title: 'Help and shortcuts', on: { click: () => this.helpDialog() } }, icon('help', 21))),
-      h('section.hero',
-        h('div.hero-copy',
-          h('span.eyebrow', h('i'), 'Free · Private · Works offline'),
-          h('h1', 'Upload a video.', h('br'), h('em', 'Get a finished edit.')),
-          h('p', 'One tap cuts the dead air, adds captions, quiet music and b-roll, and applies your brand. Everything runs on your device.'),
-          h('div.row', h('button.btn.primary.lg', { on: { click: () => this.editPick.click() } }, icon('magic', 20), 'Edit for me'),
-            h('button.btn.lg', { on: { click: () => this.startPick.click() } }, icon('upload', 19), 'Edit myself'),
-            h('button.btn.lg.ghost', { on: { click: () => this.newProjectDialog() } }, icon('plus', 19), 'Blank project')),
-          h('div.trust', h('span', icon('shield', 16), 'Files stay on your device'), h('span', icon('bolt', 16), 'Exports in seconds'), h('span', icon('cloudoff', 16), 'Works offline'))),
-        h('div.hero-art', { 'aria-hidden': 'true' }, h('div.mock-phone', h('i')),
-          h('div.mock-tl', row([3, 0, '#3b5a86'], [2, 0, '#4b3a72'], [3, 0, '#2c6b6b']), row([2, 0, '#7a6417'], [4, 0, '#2d4a6e'], [1, 0, '#7a2e58'])))),
-      this.installCard,
-      h('h2.sec', 'How Edit for me works'), h('div.steps3', [['upload', 'Pick a video', 'Any phone clip, podcast or talking-head recording.'], ['magic', 'Review the plan', 'Choose a caption look, music level and b-roll amount.'], ['export', 'Export', 'Tweak anything in the full editor, then share.']].map(([ic, t, d], i) => h('div.st', h('span.n', i + 1), h('div.ci', icon(ic, 19)), h('b', t), h('span', d)))),
-      h('h2.sec', 'Start with a format'), h('div.formats', fmtCards),
-      h('h2.sec', 'Your projects', list.length ? h('span.count', list.length) : null),
-      list.length ? h('div.projects', newCard, cards)
-        : h('div.empty.big', h('div.em-ic', icon('film', 24)), h('b', 'No projects yet'), h('p', 'Pick a format above or start from a video. Projects save automatically on this device.')),
-      h('h2.sec', 'What’s inside'), h('div.caps', caps.map(([ic, t, d]) => h('div.cap', h('div.ci', icon(ic, 19)), h('b', t), h('span', d)))),
-      h('footer.home-foot',
-        est?.quota ? h('div', h('div', `Local storage: ${fmtBytes(est.usage || 0)} used of ${fmtBytes(est.quota)}`), h('div.meter', h('i', { style: { width: Math.max(1, Math.min(100, ((est.usage || 0) / est.quota) * 100)) + '%' } })),
-          h('div', { style: { marginTop: '8px', color: 'var(--mute)' } }, 'Projects and media live in this browser. Clearing site data deletes them, so export videos you want to keep.')) : null,
-        this.statusRow)));
-    this.refreshStatus();
-    this.updateInstallUI();
-    if (this._instHandler) window.removeEventListener('eden-install-state', this._instHandler);
-    this._instHandler = () => this.updateInstallUI();
-    window.addEventListener('eden-install-state', this._instHandler);
-    home.scrollTop = 0;
-  }
+  // ------------------------------------------------------------ home (tabbed shell lives in ui/shell.js)
+  async showHome(tab) { return showShell(this, tab || this.shellTab || 'home'); }
 
   updateInstallUI() {
     const standalone = isStandalone();
@@ -822,6 +767,7 @@ class App {
 const sw2 = (on, fn) => { const b = h('button.switch' + (on ? '.on' : ''), { role: 'switch', on: { click: () => { const v = !b.classList.contains('on'); b.classList.toggle('on', v); fn(v); } } }); return b; };
 
 const app = new App();
+window.EDEN.app = app;
 window.__app = app;
 app.start().catch((e) => { console.error(e); document.body.append(h('pre', { style: { position: 'fixed', inset: 0, padding: '20px', background: '#000', color: '#f66', zIndex: 999, whiteSpace: 'pre-wrap' } }, 'EDEN Studio failed to start:\n' + (e.stack || e))); });
 void MUSIC; void EASE; void builtinMedia; void transitionById; void mergeText;

@@ -43,6 +43,14 @@ export const TEXT_PRESETS = [
   { name: 'Handwritten', text: { font: 'Caveat', weight: 700, size: 0.075, color: '#fff3c4', stroke: { on: false }, shadow: { on: true } } },
   { name: 'Tag', text: { font: 'Space Grotesk', weight: 600, size: 0.042, color: '#0b0f14', stroke: { on: false }, shadow: { on: false }, bg: { on: true, color: '#7cf5c8', a: 1, pad: 0.45, radius: 0.5 } } },
   { name: 'Warning', text: { font: 'Archivo Black', weight: 400, size: 0.06, color: '#111111', upper: true, stroke: { on: false }, shadow: { on: false }, bg: { on: true, color: '#ffd400', a: 1, pad: 0.3, radius: 0.12 } } },
+  // ---- caption-first looks (added in v4)
+  { name: 'Hormozi', text: { font: 'Montserrat', weight: 800, size: 0.066, color: '#ffffff', upper: true, stroke: { on: true, color: '#000000', w: 0.22 }, shadow: { on: true }, hl: { on: true, color: '#ffd400' } } },
+  { name: 'Karaoke', text: { font: 'Poppins', weight: 700, size: 0.05, color: '#ffffff', stroke: { on: false }, shadow: { on: false }, bg: { on: true, color: '#0b0f14', a: 0.78, pad: 0.4, radius: 0.35 }, hl: { on: true, color: '#7cf5c8' } } },
+  { name: 'Subtitle', text: { font: 'Inter', weight: 700, size: 0.04, color: '#ffffff', stroke: { on: false }, shadow: { on: false }, bg: { on: true, color: '#000000', a: 0.6, pad: 0.28, radius: 0.1 } } },
+  { name: 'Street', text: { font: 'Oswald', weight: 700, size: 0.074, color: '#ffffff', upper: true, spacing: 0.02, stroke: { on: true, color: '#000000', w: 0.18 }, shadow: { on: true }, hl: { on: true, color: '#ff3b30' } } },
+  { name: 'Soft Glow', text: { font: 'Poppins', weight: 700, size: 0.052, color: '#ffffff', stroke: { on: false }, shadow: { on: false }, glow: { on: true, color: '#ffffff', amt: 0.75 } } },
+  { name: 'Minimal', text: { font: 'Space Grotesk', weight: 600, size: 0.038, color: '#ffffff', stroke: { on: false }, shadow: { on: true, blur: 0.35 } } },
+  { name: 'Pop Outline', text: { font: 'Archivo Black', weight: 400, size: 0.066, color: '#ffffff', upper: true, stroke: { on: true, color: '#7c5cff', w: 0.24 }, shadow: { on: true, y: 0.08, blur: 0 }, hl: { on: true, color: '#ffe24a' } } },
 ];
 
 export function mergeText(base, patch) {

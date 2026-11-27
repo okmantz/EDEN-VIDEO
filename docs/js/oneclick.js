@@ -1,18 +1,25 @@
-// "Edit for me": the one-click flow. Pick a video, review a short plan, press one button.
+// "Edit for me": pick a video, choose a style, press one button.
 import { h, fmtDur } from './util.js';
 import { icon } from './ui/icons.js';
-import { loadBrand, isConfigured, brandDialog, logoFile, brandPreview, fontWeight } from './brand.js';
-import { LOOKS, BRAND_LOOK, BG_MUSIC, applyOneClick, lookStyle } from './autoedit.js';
+import { loadBrand, isConfigured, logoFile } from './brand.js';
+import { STYLE_PRESETS, BG_MUSIC, applyOneClick } from './autoedit.js';
 import { transcribe, wordsFromSubtitles, MODELS } from './asr.js';
+import { fetchStockFile } from './stock.js';
 import { MUSIC } from './synth.js';
-import { loadFonts, FONTS } from './textrender.js';
+import { lookPicker } from './ui/looks.js';
+import { RATIOS } from './model.js';
 
-const KEY = 'eden.oneclick.v1';
+const KEY = 'eden.oneclick.v2';
 const DEFAULTS = {
-  cutPauses: true, pacing: 'balanced', cutFillers: true, captions: true, look: 'Viral Pop', captionPos: 'bottom', captionScale: 1,
-  music: 'auto', musicLevel: 'balanced', broll: 'medium', cards: true, zoom: true, model: 'accurate', ratio: 'auto', applyBrand: true,
+  style: 'viral', plan: null, captionPos: 'bottom', captionScale: 1, model: 'accurate', ratio: 'auto', applyBrand: true, outro: false, stock: true,
 };
-const load = () => { try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; } catch { return { ...DEFAULTS }; } };
+const preset = (id) => STYLE_PRESETS.find((s) => s.id === id) || STYLE_PRESETS[0];
+const load = () => {
+  let o = {}; try { o = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch { /* ignore */ }
+  o = { ...DEFAULTS, ...o };
+  o.plan = { ...preset(o.style).plan, ...(o.plan || {}) };
+  return o;
+};
 const save = (o) => { try { localStorage.setItem(KEY, JSON.stringify(o)); } catch { /* ignore */ } };
 
 const seg = (items, get, set) => {
@@ -24,106 +31,100 @@ const sw = (get, set, label) => {
   const input = h('input', { type: 'checkbox', checked: !!get(), 'aria-label': label, on: { change: () => set(input.checked) } });
   return h('label.sw.mini', input, h('span.trk'));
 };
+const fld = (label, el) => h('div.fld', h('span', label), el);
 
-/** Open the plan dialog for a chosen file. */
+/** Open the one-click sheet for a chosen video file. */
 export function oneClickDialog(app, file) {
   const o = load();
   const brand = loadBrand();
-  let subtitle = null;                       // optional .srt/.vtt text
+  let subtitle = null;
+  const url = URL.createObjectURL(file);
   const body = h('div.oc');
 
-  const row = (ico, title, sub, toggle, extra) => {
-    const r = h('section.ocrow', h('div.ocr-h', h('span.ci', icon(ico, 19)), h('div.t', h('b', title), h('small', sub)), toggle || null), extra ? h('div.ocr-b', extra) : null);
-    return r;
-  };
+  /* preview of the chosen video */
+  const vid = h('video', { src: url, muted: true, playsInline: true, preload: 'metadata', controls: false });
+  const meta = h('small', (file.size / 1e6).toFixed(1) + ' MB');
+  vid.addEventListener('loadedmetadata', () => { meta.textContent = `${fmtDur(vid.duration)} · ${vid.videoWidth}×${vid.videoHeight} · ${(file.size / 1e6).toFixed(1)} MB`; try { vid.currentTime = Math.min(1, vid.duration / 4); } catch { /* ignore */ } });
+  const head = h('div.oc-file', h('div.oc-thumb', vid), h('div', h('b', file.name), meta));
 
-  /* look picker: each chip shows the font in the brand's colors */
-  const lookGrid = h('div.looks');
-  loadFonts(FONTS);
-  const drawLooks = () => {
-    const list = [...(isConfigured(brand) ? [BRAND_LOOK] : []), ...LOOKS];
-    lookGrid.replaceChildren(...list.map((l) => {
-      const st = lookStyle(l.name, brand, o.applyBrand);
-      const hl = st.hl?.on ? st.hl.color : null;
-      const boxed = st.bg?.on ? { background: st.bg.color, padding: '2px 8px', borderRadius: '6px' } : {};
-      const words = ['MAKE', 'EVERY', 'SECOND'];
-      const mk = h('div.lk-prev', { style: { fontFamily: `"${st.font}", sans-serif`, fontWeight: st.weight, color: st.color, ...boxed,
-        textShadow: st.glow?.on ? `0 0 10px ${st.glow.color}, 0 0 20px ${st.glow.color}` : (st.stroke?.on ? `-1px -1px 0 ${st.stroke.color}, 1px -1px 0 ${st.stroke.color}, -1px 1px 0 ${st.stroke.color}, 1px 1px 0 ${st.stroke.color}` : '0 1px 3px rgba(0,0,0,.7)') } },
-        (st.upper ? words : ['Make', 'every', 'second']).map((w, i) => h('span', { style: hl && i === 1 ? { color: hl } : {} }, w + ' ')));
-      return h('button.look' + (o.look === l.name ? '.on' : ''), { type: 'button', on: { click: () => { o.look = l.name; drawLooks(); } } }, h('div.shot', mk), h('b', l.name), h('small', l.tag));
-    }));
-  };
-  drawLooks();
+  /* style cards */
+  const cards = h('div.styles');
+  const drawCards = () => cards.replaceChildren(...STYLE_PRESETS.map((s) => h('button.style' + (o.style === s.id ? '.on' : ''), { type: 'button', on: { click: () => { o.style = s.id; o.plan = { ...s.plan }; drawCards(); syncAll(); } } },
+    h('span.si', icon(s.icon, 20)), h('b', s.name), h('small', s.blurb))));
 
+  /* fine tune */
+  const P = o.plan;
+  const looks = lookPicker({ brand, applyBrand: () => o.applyBrand, get: () => P.look, set: (n) => { P.look = n; }, compact: true });
   const musicChoices = [['auto', 'Auto-pick'], ...BG_MUSIC.map((id) => [id, MUSIC.find((m) => m.id === id)?.name || id]), ['none', 'No music']];
-  const musicSel = h('select.field', { 'aria-label': 'Music track', on: { change: (e) => { o.music = e.target.value; } } },
-    musicChoices.map(([v, l]) => h('option', { value: v, selected: v === o.music }, l)));
-
-  const srtIn = h('input', { type: 'file', accept: '.srt,.vtt,text/vtt,application/x-subrip', hidden: true, on: { change: async (e) => {
-    const f = e.target.files[0]; if (!f) return;
-    const txt = await f.text(); const w = wordsFromSubtitles(txt);
-    if (!w.length) { app.toast('No captions found in that file', 'err'); return; }
-    subtitle = w; srtNote.textContent = `Using ${f.name} (${w.length} words)`; modelWrap.hidden = true;
-  } } });
+  const musicSel = h('select.field', { 'aria-label': 'Music track', on: { change: (e) => { P.music = e.target.value; } } }, musicChoices.map(([v, l]) => h('option', { value: v }, l)));
   const srtNote = h('small.srtnote', '');
   const modelSel = h('select.field', { 'aria-label': 'Speech model', on: { change: (e) => { o.model = e.target.value; } } },
     Object.entries(MODELS).map(([k, m]) => h('option', { value: k, selected: k === o.model }, m.label)));
-  const modelWrap = h('div.fld', h('span', 'Speech recognition'), modelSel);
+  const modelWrap = fld('Speech recognition', modelSel);
+  const srtIn = h('input', { type: 'file', accept: '.srt,.vtt,text/vtt,application/x-subrip', hidden: true, on: { change: async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    const w = wordsFromSubtitles(await f.text());
+    if (!w.length) { app.toast('No captions found in that file', 'err'); return; }
+    subtitle = w; srtNote.textContent = `Using ${f.name} (${w.length} words)`; modelWrap.hidden = true;
+  } } });
 
-  const brandSum = h('div.brandsum');
-  const drawBrand = () => {
-    const b = loadBrand(); Object.assign(brand, b);
-    brandSum.replaceChildren(isConfigured(b)
-      ? h('div.bs', h('div.sws', [b.primary, b.secondary, b.text].map((c) => h('i', { style: { background: c } }))), h('div', h('b', b.name || 'Your brand'), h('small', [b.handle && '@' + b.handle.replace(/^@/, ''), b.logo && 'logo'].filter(Boolean).join(' · ') || 'Colors and font')),
-        h('button.btn.sm.ghost', { type: 'button', on: { click: () => brandDialog(app, () => { drawBrand(); drawLooks(); }) } }, 'Edit'))
-      : h('div.bs', h('div', h('b', 'No brand set up yet'), h('small', 'Add your name, colors, font and logo once.')),
-        h('button.btn.sm', { type: 'button', on: { click: () => brandDialog(app, () => { drawBrand(); drawLooks(); }) } }, icon('plus', 15), 'Set up')));
-  };
-  drawBrand();
+  const fine = [];
+  const rows = h('div.fine-body');
+  const syncAll = () => { musicSel.value = P.music; looks.redraw(); fine.forEach((f) => f()); };
+  const reg = (el, redraw) => { fine.push(redraw); return el; };
+  const segRow = (label, items, key) => { const s = seg(items, () => P[key], (v) => { P[key] = v; }); return reg(fld(label, s), () => { const n = seg(items, () => P[key], (v) => { P[key] = v; }); s.replaceWith(n); }); };
+  const toggle = (label, key, hint) => h('label.tg', sw(() => P[key], (v) => { P[key] = v; }, label), h('span', h('b', label), hint ? h('small', hint) : null));
 
-  body.append(
-    h('div.oc-file', icon('film', 18), h('b', file.name), h('span', (file.size / 1e6).toFixed(1) + ' MB')),
-    row('silence', 'Cut the dead air', 'Pauses, “um”, “uh” and stutters. Eden measures your audio, so quiet speakers are not clipped.', sw(() => o.cutPauses, (v) => { o.cutPauses = v; o.cutFillers = v; }, 'Cut dead air'),
-      seg([['relaxed', 'Relaxed'], ['balanced', 'Balanced'], ['tight', 'Tight']], () => o.pacing, (v) => { o.pacing = v; })),
-    row('captions', 'Captions', 'Word-by-word, timed to your voice.', sw(() => o.captions, (v) => { o.captions = v; }, 'Captions'),
-      h('div', lookGrid,
-        h('div.row2', h('div.fld', h('span', 'Position'), seg([['bottom', 'Bottom'], ['center', 'Middle'], ['top', 'Top']], () => o.captionPos, (v) => { o.captionPos = v; })),
-          h('div.fld', h('span', 'Size'), seg([[0.85, 'S'], [1, 'M'], [1.2, 'L']], () => o.captionScale, (v) => { o.captionScale = v; })), modelWrap),
-        h('div.srt', h('button.btn.sm.ghost', { type: 'button', on: { click: () => srtIn.click() } }, icon('upload', 15), 'I have a caption file (.srt)'), srtNote, srtIn))),
-    row('audio', 'Quiet background music', 'A soft track that fades in and out and ducks under your voice.', sw(() => o.music !== 'none', (v) => { o.music = v ? 'auto' : 'none'; musicSel.value = o.music; }, 'Music'),
-      h('div.row2', h('div.fld', h('span', 'Track'), musicSel), h('div.fld', h('span', 'Level'), seg([['subtle', 'Subtle'], ['balanced', 'Balanced'], ['present', 'Present']], () => o.musicLevel, (v) => { o.musicLevel = v; })))),
-    row('broll', 'B-roll cutaways', 'Animated backgrounds with a keyword card, matched to what you say.', null,
-      h('div.row2', seg([['off', 'Off'], ['low', 'Light'], ['medium', 'Balanced'], ['high', 'Lots']], () => o.broll, (v) => { o.broll = v; }),
-        h('label.inl', sw(() => o.cards, (v) => { o.cards = v; }, 'Keyword cards'), h('span', 'Keyword cards')))),
-    row('shield', 'Your brand', 'Colors on captions and cards, plus your handle and logo.', sw(() => o.applyBrand, (v) => { o.applyBrand = v; drawLooks(); }, 'Apply brand'), brandSum),
-    row('ratio', 'Format', 'Match your video, or pick a size for where it is going.', null,
-      seg([['auto', 'Match video'], ['9:16', '9:16'], ['1:1', '1:1'], ['4:5', '4:5'], ['16:9', '16:9']], () => o.ratio, (v) => { o.ratio = v; })));
+  rows.append(
+    h('div.grp', h('h4', 'Pauses'), segRow('Pacing', [['relaxed', 'Relaxed'], ['balanced', 'Balanced'], ['tight', 'Tight']], 'pacing'),
+      h('div.tgs', toggle('Cut dead air', 'cutPauses'), toggle('Remove “um” and “uh”', 'cutFillers'), toggle('Remove false starts and retakes', 'cutRetakes', 'Keeps the last, best take'))),
+    h('div.grp', h('h4', 'Captions'), toggle('Show captions', 'captions'), looks,
+      h('div.row2', fld('Position', seg([['bottom', 'Bottom'], ['center', 'Middle'], ['top', 'Top']], () => o.captionPos, (v) => { o.captionPos = v; })),
+        fld('Size', seg([[0.85, 'S'], [1, 'M'], [1.2, 'L']], () => o.captionScale, (v) => { o.captionScale = v; })), modelWrap),
+      h('div.srt', h('button.btn.sm.ghost', { type: 'button', on: { click: () => srtIn.click() } }, icon('upload', 15), 'I have a caption file (.srt)'), srtNote, srtIn)),
+    h('div.grp', h('h4', 'Music and b-roll'),
+      h('div.row2', fld('Music track', musicSel), segRow('Music level', [['subtle', 'Subtle'], ['balanced', 'Balanced'], ['present', 'Present']], 'musicLevel')),
+      segRow('B-roll', [['off', 'Off'], ['low', 'Light'], ['medium', 'Balanced'], ['high', 'Lots']], 'broll'),
+      h('div.tgs', toggle('Keyword cards on b-roll', 'cards'), toggle('Slow punch-in on emphasis', 'zoom'),
+        h('label.tg', sw(() => o.stock, (v) => { o.stock = v; }, 'Real stock footage'), h('span', h('b', 'Real stock footage'), h('small', brand.pexelsKey ? 'Uses your Pexels key' : 'Add a free Pexels key in Brand to enable')))),
+      segRow('Color grade', [['none', 'None'], ['clean', 'Clean'], ['vivid', 'Vivid'], ['warm', 'Warm'], ['cinema', 'Cinema']], 'grade')),
+    h('div.grp', h('h4', 'Brand and format'),
+      h('div.tgs', h('label.tg', sw(() => o.applyBrand, (v) => { o.applyBrand = v; looks.redraw(); }, 'Apply brand'), h('span', h('b', isConfigured(brand) ? `Apply ${brand.name || 'my brand'}` : 'Apply my brand'), h('small', isConfigured(brand) ? 'Colors, handle and logo' : 'Set it up in the Brand tab'))),
+        h('label.tg', sw(() => o.outro, (v) => { o.outro = v; }, 'End card'), h('span', h('b', 'Add a branded end card')))),
+      fld('Format', seg([['auto', 'Match video'], ...RATIOS.map((r) => [r.id, r.id])], () => o.ratio, (v) => { o.ratio = v; }))));
 
-  const m = app.modal({ title: 'Edit for me', lead: 'Review the plan, then press the button. You can fine-tune everything in the editor afterwards.', body, wide: true,
-    actions: [{ label: 'Cancel', ghost: true }, { label: 'Edit for me', primary: true, onClick: () => { save(o); runOneClick(app, file, { ...o, brand: loadBrand(), words: subtitle }); } }] });
+  const fineBox = h('details.fine', h('summary', icon('sliders', 17), h('b', 'Fine-tune'), h('small', 'Everything can also be changed in the editor'), icon('chevdown', 16)), rows);
+  body.append(head, h('h3.oc-h', 'Pick a style'), cards, fineBox);
+  drawCards(); syncAll();
+
+  const m = app.modal({ title: 'Edit for me', lead: 'Choose a style and press the button. Your video stays on this device.', body, wide: true,
+    onClose: () => URL.revokeObjectURL(url),
+    actions: [{ label: 'Cancel', ghost: true }, { label: 'Edit for me', primary: true, onClick: () => { save(o); runOneClick(app, file, { ...o.plan, ...o, plan: undefined, outro: o.outro, brand: loadBrand(), words: subtitle }); } }] });
   m.box.classList.add('ocbox');
   return m;
 }
 
-/** Run the whole edit with a progress dialog. `opts.words` skips speech recognition (used for captions files and tests). */
+/** Run the whole edit with a progress dialog. `opts.words` skips speech recognition (used for caption files and tests). */
 export async function runOneClick(app, file, opts) {
-  const needAsr = (opts.captions || opts.cutFillers) && !opts.words;
+  const wantsSpeech = opts.captions || opts.cutFillers || opts.cutRetakes;
+  const needAsr = wantsSpeech && !opts.words;
   const steps = [['import', 'Reading your video'], ...(needAsr ? [['listen', 'Listening to what you say']] : []), ['cut', 'Cutting the dead air'],
     ...(opts.captions ? [['captions', 'Adding captions']] : []), ...(opts.broll !== 'off' ? [['broll', 'Finding b-roll']] : []),
     ...(opts.music !== 'none' ? [['music', 'Mixing quiet music']] : []), ...(opts.applyBrand ? [['brand', 'Applying your brand']] : [])];
   const bar = h('i'); const note = h('small.pnote', '');
   const list = h('ul.psteps', steps.map(([k, l]) => h('li', { 'data-k': k }, h('span.dot'), l)));
   const dlg = app.modal({ title: 'Editing your video', lead: 'This stays on your device. Keep this tab open.', body: h('div', h('div.pbar', bar), list, note), dismiss: false });
-  let done = 0;
+  const idx = (k) => steps.findIndex((s) => s[0] === k);
   const mark = (key) => {
-    list.querySelectorAll('li').forEach((li) => { const i = steps.findIndex((s) => s[0] === li.dataset.k); li.className = i < steps.findIndex((s) => s[0] === key) ? 'done' : i === steps.findIndex((s) => s[0] === key) ? 'now' : ''; });
-    done = Math.max(0, steps.findIndex((s) => s[0] === key)); bar.style.width = Math.round(((done + 0.3) / steps.length) * 100) + '%';
+    const now = idx(key); if (now < 0) return;
+    list.querySelectorAll('li').forEach((li) => { const i = idx(li.dataset.k); li.className = i < now ? 'done' : i === now ? 'now' : ''; });
+    bar.style.width = Math.round(((now + 0.3) / steps.length) * 100) + '%';
   };
   const fail = (e) => { console.error(e); dlg.close(); app.toast(e.message || 'Something went wrong', 'err', 6000); };
   try {
     mark('import');
     await app.startFromFiles([file]);
-    if (opts.ratio && opts.ratio !== 'auto') { const R = (await import('./model.js')).RATIOS.find((x) => x.id === opts.ratio); if (R) { app.store.setCanvas(R.id, R.w, R.h); } }
+    if (opts.ratio && opts.ratio !== 'auto') { const R = RATIOS.find((x) => x.id === opts.ratio); if (R) app.store.setCanvas(R.id, R.w, R.h); }
     const st = app.store;
     const src = st.mainTrack.clips.find((c) => c.kind === 'video');
     if (!src) throw new Error('That file has no video track.');
@@ -145,9 +146,14 @@ export async function runOneClick(app, file, opts) {
         }
       }
     }
-    const logoMedia = opts.brand?.logo && opts.applyBrand ? await app.lib.importFile(await logoFile(opts.brand)).catch(() => null) : null;
-    const stats = await applyOneClick({ store: st, bank: app.bank, lib: app.lib, logoMedia },
-      { ...opts, brand: opts.brand, applyBrand: opts.applyBrand && isConfigured(opts.brand), cutPauses: opts.cutPauses && media.hasAudio }, words, (k) => mark(k));
+    const brand = opts.brand;
+    const useBrand = opts.applyBrand && isConfigured(brand);
+    const logoMedia = brand?.logo && useBrand ? await app.lib.importFile(await logoFile(brand)).catch(() => null) : null;
+    const portrait = (media.h || 1) >= (media.w || 1);
+    const stock = opts.stock && brand?.pexelsKey && opts.broll !== 'off'
+      ? async (spot) => { const f = await fetchStockFile(spot.query || spot.word, { key: brand.pexelsKey, portrait }); return f ? app.lib.importFile(f).catch(() => null) : null; } : null;
+    const stats = await applyOneClick({ store: st, bank: app.bank, lib: app.lib, logoMedia, stock },
+      { ...opts, brand, applyBrand: useBrand, outro: !!opts.outro, cutPauses: opts.cutPauses && media.hasAudio }, words, (k) => mark(k));
     bar.style.width = '100%';
     st.flush(); app.timeline.fit(); app.engine.seek(0);
     dlg.close();
@@ -158,12 +164,15 @@ export async function runOneClick(app, file, opts) {
 
 function summary(app, s, warnings) {
   const item = (ico, text) => h('li', icon(ico, 17), h('span', text));
+  const pl = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  const cut = [s.fillers && pl(s.fillers, 'filler word'), s.repeats && pl(s.repeats, 'stutter'), s.retakes && pl(s.retakes, 'retake'), s.hesitations && pl(s.hesitations, 'hesitation')].filter(Boolean);
   const lines = [
-    item('silence', s.silence + s.fillers ? `Cut ${s.silence.toFixed(1)}s of dead air${s.fillers ? `, ${s.fillers} filler word${s.fillers === 1 ? '' : 's'}` : ''}${s.repeats ? ` and ${s.repeats} stutter${s.repeats === 1 ? '' : 's'}` : ''}` : 'No dead air needed cutting'),
-    s.captions ? item('captions', `${s.captions} captions added`) : null,
+    s.silence > 0.05 || cut.length ? item('silence', `Cut ${s.silence.toFixed(1)}s of dead air${cut.length ? ' plus ' + cut.join(', ') : ''}`) : item('silence', 'No dead air needed cutting'),
+    s.captions ? item('captions', `${pl(s.captions, 'caption')} added`) : null,
     s.music ? item('audio', `${s.music} playing quietly under your voice`) : null,
-    s.broll ? item('broll', `${s.broll} b-roll cutaway${s.broll === 1 ? '' : 's'}`) : null,
+    s.broll ? item('broll', `${pl(s.broll, 'b-roll cutaway')}${s.stock ? ` (${s.stock} real footage)` : ''}`) : null,
     s.brand ? item('shield', 'Your brand applied') : null,
+    s.outro ? item('film', 'End card added') : null,
   ].filter(Boolean);
   app.modal({ title: 'Your edit is ready', lead: `${fmtDur(s.from)} became ${fmtDur(s.to)}. Review it, change anything you like, then export.`,
     body: h('div', h('ul.sumlist', lines), ...warnings.map((w) => h('div.warnbox', icon('info', 17), h('span', w)))),
