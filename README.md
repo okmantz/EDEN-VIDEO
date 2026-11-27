@@ -41,6 +41,9 @@ It then opens full screen and works offline. Your projects and media stay on you
 - **Music and sound**: upload your own background music (MP3, WAV, M4A), or use 12 original built-in tracks and 16 sound effects. Volume, fades, looping, auto-ducking under speech, and loudness normalisation on export.
 - **Text and stickers**: 14 text styles, 18 fonts, outline, glow, shadow, background box, animated in/out, typewriter, plus emoji and shape stickers.
 - **Keyframes** for position, scale, rotation and opacity; speed from 0.25x to 4x; masks, chroma key (green screen), blend modes, crop, flip, picture-in-picture.
+- **Edit for me (one click)**: pick a video and press one button. Eden cuts dead air (the threshold adapts to how loud your recording is), removes "um" / "uh" and stutters, adds word-by-word captions in one of 12 looks, mixes a quiet music track that fades and ducks under your voice, drops in b-roll cutaways with keyword cards, and applies your brand. Everything stays editable afterwards in the full editor.
+- **Brand profile**: the **Brand profile** button on the home screen stores your brand name, handle, three colors, font and logo (position and size) on this device, with a live preview. The app's accent color can follow your brand.
+- **Speech to text**: captions and filler removal use Whisper running in your browser. The speech model (about 40 to 80 MB) downloads once the first time and is then cached; it needs an internet connection that can reach `cdn.jsdelivr.net` and `huggingface.co`. If it cannot load, the rest of the edit still runs, and you can attach a `.srt` / `.vtt` file instead.
 - **Captions**: import `.srt` / `.vtt`, or paste lines. **Remove silences** automatically from a clip.
 - **Export** to MP4 (H.264) up to 4K at 24, 30 or 60 fps, rendered on your own device. Share straight from your phone.
 - **Private**: your files never leave your device. Projects autosave locally in your browser.
@@ -77,7 +80,7 @@ Eden runs on your own computer. Your footage is never uploaded anywhere, and it 
 - **B-roll.** Your library first, then Pexels (optional key), then animated keyword cards in your brand colors so there is always a cutaway.
 - **New interface.** New design, dark and light themes, a mobile layout, a step-by-step progress view, and a Brand kit page.
 
-The browser-only EDEN Studio in `docs/` is unchanged.
+The browser-only EDEN Studio in `docs/` has its own one-click editor and brand profile (see "Edit for me" below).
 
 ## What it does
 
