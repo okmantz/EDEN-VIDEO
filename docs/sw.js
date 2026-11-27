@@ -2,7 +2,7 @@
 //  - Pre-caches the whole app (code, icons, fonts) so it opens and edits fully offline.
 //  - Code (HTML/JS/CSS) is network-first, so a new deploy shows up on the next open; the cache is the offline fallback.
 //  - Fonts, icons and images are cache-first.
-const VERSION = 'eden-studio-v3';
+const VERSION = 'eden-studio-v4';
 const CORE = [
  "./",
  "assets/icons/apple-touch-icon.png",
@@ -12,12 +12,15 @@ const CORE = [
  "assets/icons/icon-512.png",
  "assets/icons/icon-maskable-512.png",
  "css/app.css",
+ "css/shell.css",
  "css/fonts.css",
  "index.html",
  "js/app.js",
  "js/brand.js",
  "js/autoedit.js",
  "js/oneclick.js",
+ "js/stock.js",
+ "js/templates.js",
  "js/asr.js",
  "js/audio.js",
  "js/compose.js",
@@ -34,6 +37,8 @@ const CORE = [
  "js/textrender.js",
  "js/thumbs.js",
  "js/ui/icons.js",
+ "js/ui/looks.js",
+ "js/ui/shell.js",
  "js/ui/inspector.js",
  "js/ui/panels.js",
  "js/ui/preview.js",
