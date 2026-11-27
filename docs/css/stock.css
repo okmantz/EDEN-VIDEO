@@ -1,0 +1,47 @@
+/* Stock footage browser (B-roll > Real footage) and the template slot picker. Uses the app's own tokens. */
+.stock .sk-ctl{display:flex;gap:8px;align-items:center;margin:0 0 10px;flex-wrap:wrap}
+.stock .sk-ctl .seg{flex:1 1 140px}
+.stock .sk-prov-seg{flex:1 1 140px}
+.stock .search{margin:0 0 10px}
+.stock .chips.sub{padding-bottom:10px;margin-top:-2px}
+.stock .chip.sm{height:26px;padding:0 11px;font-size:11.5px;font-weight:600;background:transparent}
+.stock .chip.sm.on{background:var(--accent-soft)}
+.sk-grid{margin-top:2px}
+.card.sk .sk-im{aspect-ratio:3/4}
+.card.sk .sk-im.wide{aspect-ratio:16/10}
+.card.sk .sk-pv{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none}
+.card.sk .sk-prog{position:absolute;left:0;right:0;bottom:0;height:3px;background:transparent;overflow:hidden;opacity:0;transition:opacity .15s}
+.card.sk .sk-prog i{display:block;height:100%;width:0;background:var(--grad);transition:width .2s}
+.card.sk.busy{pointer-events:none}
+.card.sk.busy .sk-prog{opacity:1}
+.card.sk.busy::after{content:"";position:absolute;inset:0;background:rgba(6,8,11,.55)}
+.card.sk.busy .sk-prog{z-index:2}
+.card.sk.done{border-color:var(--accent-line)}
+.sk-foot{margin:12px 0 4px;display:flex;justify-content:center}
+.sk-foot .sk-more{min-width:140px}
+.sk-load{display:flex;align-items:center;gap:10px;color:var(--dim);font-size:12.5px}
+.sk-load i{width:16px;height:16px;border-radius:50%;border:2px solid var(--line3);border-top-color:var(--accent);animation:skspin .8s linear infinite}
+@keyframes skspin{to{transform:rotate(360deg)}}
+.sk-err{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;text-align:center;color:var(--warn);font-size:12.5px;line-height:1.45;padding:6px 4px}
+.sk-note{font-size:11px;color:var(--mute);text-align:center;margin:8px 0 2px}
+.sk-note a,.sk-keys{color:var(--dim);text-decoration:underline;text-underline-offset:2px}
+.sk-keys{display:block;margin:6px auto 0;font-size:11px;color:var(--mute)}
+.stock-setup{padding:4px 2px 8px}
+.stock-setup .sk-ic{width:48px;height:48px;border-radius:14px;display:grid;place-items:center;background:var(--grad-soft);color:var(--accent);margin-bottom:12px}
+.stock-setup h4{font-size:15px;font-weight:700;margin:0 0 6px}
+.stock-setup p{font-size:12.5px;color:var(--dim);line-height:1.55;margin:0 0 14px}
+.stock-setup p.fine{font-size:11.5px;color:var(--mute);margin:12px 0 0}
+.sk-prov{padding:12px;border-radius:14px;background:var(--raise);border:1px solid var(--line);margin-bottom:10px}
+.sk-ph{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;font-size:13px}
+.sk-ph a{font-size:11.5px;color:var(--accent)}
+.sk-prov .keyrow{display:flex;gap:8px}
+.sk-prov .keyrow .field{flex:1;min-width:0}
+.modal.stockmodal{max-width:760px;width:calc(100vw - 24px)}
+.modal.stockmodal .stock{max-height:62vh;overflow:auto;margin:0 -4px;padding:0 4px}
+/* template slot: a small "stock" button next to the clip */
+.slot .stockbtn{flex:none;height:30px;padding:0 10px;border-radius:99px;font-size:11.5px;font-weight:700;color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent-line);display:inline-flex;align-items:center;gap:5px}
+.slot .stockbtn:hover{background:rgba(111,242,198,.2)}
+.fillstock{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:14px;margin:0 0 12px;width:100%;text-align:left;background:var(--grad-soft);border:1px solid var(--accent-line);color:var(--text)}
+.fillstock b{display:block;font-size:13px}.fillstock small{display:block;font-size:11.5px;color:var(--dim);margin-top:2px}
+.fillstock .ic{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);flex:none}
+.fillstock[disabled]{opacity:.6;pointer-events:none}
