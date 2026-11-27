@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>EDEN Studio — Video editor in your browser</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<meta name="description" content="EDEN Studio: a free, private, CapCut-style video editor that runs entirely in your browser. Multi-track timeline, 50+ effects, 40 transitions, 58 B-roll backgrounds, music, captions and 4K export.">
+<meta name="theme-color" content="#06080b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="EDEN Studio">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="assets/icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+<link rel="preload" href="assets/fonts/inter-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="css/fonts.css">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div class="loading" id="loading"><div style="text-align:center"><div class="logo" style="margin:0 auto 18px;width:54px;height:54px;border-radius:17px"></div><div class="spin" style="margin:0 auto"></div></div></div>
+<div id="app">
+  <section id="home" hidden></section>
+  <section id="editor" hidden>
+    <header class="topbar" id="topbar"></header>
+    <nav class="rail" id="rail" aria-label="Tools"></nav>
+    <aside class="panel" id="panel"><div class="sheet-grab" id="panelGrab"><i></i></div><div class="ph"><h3 id="panelTitle"></h3><button class="btn ghost sm icon x" id="panelClose" aria-label="Close"></button></div><div class="pb" id="panelBody"></div></aside>
+    <main class="stage" id="stage">
+      <div class="viewport" id="viewport"><div class="cwrap" id="cwrap"><canvas id="cv"></canvas><div id="overlay"></div></div></div>
+      <div class="transport" id="transport"></div>
+    </main>
+    <aside class="inspector" id="inspector"><div class="sheet-grab" id="inspGrab"><i></i></div><div class="ph"><h3 id="inspTitle">Edit</h3><button class="btn ghost sm icon x" id="inspClose" aria-label="Close"></button></div><div class="pb" id="inspBody"></div></aside>
+    <section class="timeline" id="timeline"></section>
+  </section>
+</div>
+<div class="scrim" id="scrim"></div>
+<div id="toasts" aria-live="polite"></div>
+<noscript><p style="padding:24px">EDEN Studio needs JavaScript.</p></noscript>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
